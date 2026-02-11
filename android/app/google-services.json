@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "713941637793",
+    "project_id": "darawal-kaab-app2",
+    "storage_bucket": "darawal-kaab-app2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:713941637793:android:985c9dfd46255787896ee0",
+        "android_client_info": {
+          "package_name": "com.example.darawalkaab"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBi698tdhQpnjNijB6GyNL_CjikSYxrudg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
