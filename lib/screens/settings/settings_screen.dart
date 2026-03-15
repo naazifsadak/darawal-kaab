@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +10,7 @@ import 'about_app_screen.dart';
 import 'privacy_policy_screen.dart';
 import '../../services/auth_service.dart';
 import '../welcome_screen.dart';
+import 'package:darawalkaab/l10n/app_localizations.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -27,7 +27,7 @@ class SettingsScreen extends StatelessWidget {
       backgroundColor: backgroundColor,
       appBar: AppBar(
         title: Text(
-          "Settings",
+          AppLocalizations.of(context)!.settings,
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 20),
         ),
         centerTitle: true,
@@ -44,7 +44,7 @@ class SettingsScreen extends StatelessWidget {
           _buildSettingsTile(
             context,
             icon: Icons.person_outline,
-            title: "Account Information",
+            title: AppLocalizations.of(context)!.accountInformation,
             onTap: () {
               Navigator.push(
                 context,
@@ -58,15 +58,27 @@ class SettingsScreen extends StatelessWidget {
           _buildSwitchTile(
             context,
             icon: Icons.notifications_none_outlined,
-            title: "Notifications",
+            title: AppLocalizations.of(context)!.notifications,
             value: settings.notificationsEnabled,
             onChanged: (value) => settings.toggleNotifications(value),
+          ),
+          Consumer<UserProvider>(
+            builder: (context, userProvider, _) {
+              return _buildSwitchTile(
+                context,
+                icon: Icons.visibility_off_outlined,
+                title: AppLocalizations.of(context)!.hideFollowersFollowing,
+                value: userProvider.hideFollowersFollowing,
+                onChanged: (value) =>
+                    userProvider.toggleHideFollowersFollowing(value),
+              );
+            },
           ),
           _buildSwitchTile(
             context,
             icon: Icons.dark_mode_outlined,
-            title: "Dark Mode",
-            value: settings.themeMode == ThemeMode.dark,
+            title: AppLocalizations.of(context)!.darkMode,
+            value: isDark,
             onChanged: (value) => settings.toggleTheme(value),
           ),
 
@@ -75,7 +87,7 @@ class SettingsScreen extends StatelessWidget {
           _buildSettingsTile(
             context,
             icon: Icons.lock_outline,
-            title: "Change Password",
+            title: AppLocalizations.of(context)!.changePassword,
             onTap: () {
               Navigator.push(
                 context,
@@ -91,7 +103,7 @@ class SettingsScreen extends StatelessWidget {
           _buildSettingsTile(
             context,
             icon: Icons.help_outline,
-            title: "Help Center",
+            title: AppLocalizations.of(context)!.helpCenter,
             onTap: () {
               Navigator.push(
                 context,
@@ -104,7 +116,7 @@ class SettingsScreen extends StatelessWidget {
           _buildSettingsTile(
             context,
             icon: Icons.info_outline,
-            title: "About App",
+            title: AppLocalizations.of(context)!.aboutApp,
             onTap: () {
               Navigator.push(
                 context,
@@ -115,7 +127,7 @@ class SettingsScreen extends StatelessWidget {
           _buildSettingsTile(
             context,
             icon: Icons.privacy_tip_outlined,
-            title: "Privacy Policy",
+            title: AppLocalizations.of(context)!.privacyPolicy,
             onTap: () {
               Navigator.push(
                 context,
@@ -129,7 +141,7 @@ class SettingsScreen extends StatelessWidget {
           _buildSettingsTile(
             context,
             icon: Icons.logout,
-            title: "Log Out",
+            title: AppLocalizations.of(context)!.logOut,
             onTap: () => _showLogoutDialog(context),
             isDestructive: true,
           ),
@@ -301,7 +313,7 @@ class SettingsScreen extends StatelessWidget {
           child: const Icon(Icons.language, color: Colors.blue, size: 22),
         ),
         title: Text(
-          "Language",
+          AppLocalizations.of(context)!.language,
           style: GoogleFonts.poppins(
             fontSize: 16,
             fontWeight: FontWeight.w500,
@@ -352,7 +364,14 @@ class SettingsScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               _buildLanguageOption(context, settings, 'English', 'en', '🇺🇸'),
-              _buildLanguageOption(context, settings, 'Somali', 'so', '🇸🇴'),
+              _buildLanguageOption(
+                context,
+                settings,
+                'Somali',
+                'so',
+                '🇸🇴',
+                isEnabled: false,
+              ),
               _buildLanguageOption(context, settings, 'Arabic', 'ar', '🇸🇦'),
             ],
           ),
@@ -366,8 +385,9 @@ class SettingsScreen extends StatelessWidget {
     SettingsProvider settings,
     String name,
     String code,
-    String flag,
-  ) {
+    String flag, {
+    bool isEnabled = true,
+  }) {
     final isSelected = settings.locale.languageCode == code;
     return ListTile(
       leading: Text(flag, style: const TextStyle(fontSize: 24)),
@@ -376,11 +396,23 @@ class SettingsScreen extends StatelessWidget {
         style: GoogleFonts.poppins(
           fontSize: 16,
           fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-          color: isSelected ? Colors.blue : Colors.black,
+          color: isEnabled
+              ? (isSelected ? Colors.blue : Colors.black)
+              : Colors.grey,
         ),
       ),
       trailing: isSelected ? const Icon(Icons.check, color: Colors.blue) : null,
       onTap: () {
+        if (!isEnabled) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$name language will be coming soon!'),
+              backgroundColor: Colors.orange,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
         settings.setLocale(Locale(code));
         Navigator.pop(context);
       },
@@ -427,7 +459,7 @@ class SettingsScreen extends StatelessWidget {
           child: Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: Colors.blue,
+            activeThumbColor: Colors.blue,
             activeTrackColor: Colors.blue.withAlpha(100),
             inactiveThumbColor: Colors.grey,
             inactiveTrackColor: Colors.grey.withAlpha(50),
@@ -446,7 +478,7 @@ class SettingsScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text("Log Out"),
+        title: Text(AppLocalizations.of(context)!.logOut),
         content: const Text("Are you sure you want to log out?"),
         actions: [
           TextButton(
@@ -470,7 +502,10 @@ class SettingsScreen extends StatelessWidget {
                 (route) => false,
               );
             },
-            child: const Text("Log Out", style: TextStyle(color: Colors.red)),
+            child: Text(
+              AppLocalizations.of(context)!.logOut,
+              style: const TextStyle(color: Colors.red),
+            ),
           ),
         ],
       ),

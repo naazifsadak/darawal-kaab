@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../models/user_model.dart';
+import '../../models/post_model.dart';
 import '../../providers/social_provider.dart';
+import 'post_detail_screen.dart';
 
 class OtherUserProfileScreen extends StatefulWidget {
   final User user;
@@ -14,13 +16,44 @@ class OtherUserProfileScreen extends StatefulWidget {
 }
 
 class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
+  User? _liveUser;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchLiveUser();
+  }
+
+  Future<void> _fetchLiveUser() async {
+    final liveProfile = await Provider.of<SocialProvider>(
+      context,
+      listen: false,
+    ).fetchUserProfile(widget.user.id);
+
+    if (mounted) {
+      setState(() {
+        _liveUser = liveProfile;
+        _isLoading = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Fallback to exactly what was passed in while loading or if it fails
+    final displayUser = _liveUser ?? widget.user;
+
     return Consumer<SocialProvider>(
       builder: (context, socialProvider, child) {
-        // Ensure we are working with the latest user object from provider
-        final user = socialProvider.getUser(widget.user.id);
-        final isFollowing = user.isFollowing;
+        final isFollowing = displayUser.isFollowing;
+
+        if (_isLoading) {
+          return const Scaffold(
+            backgroundColor: Colors.white,
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
 
         return Scaffold(
           backgroundColor: Colors.white,
@@ -32,7 +65,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
               onPressed: () => Navigator.pop(context),
             ),
             title: Text(
-              user.name,
+              displayUser.name,
               style: GoogleFonts.poppins(
                 color: Colors.black,
                 fontSize: 20,
@@ -55,14 +88,14 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
                   child: CircleAvatar(
                     radius: 50,
                     backgroundColor: Colors.grey[200],
-                    backgroundImage: user.imageProvider,
+                    backgroundImage: displayUser.imageProvider,
                   ),
                 ),
                 const SizedBox(height: 16),
 
                 // Name
                 Text(
-                  user.name,
+                  displayUser.name,
                   style: GoogleFonts.poppins(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
@@ -77,7 +110,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
                     vertical: 8,
                   ),
                   child: Text(
-                    user.bio,
+                    displayUser.bio,
                     textAlign: TextAlign.center,
                     style: GoogleFonts.poppins(
                       fontSize: 14,
@@ -93,9 +126,19 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildStatItem(user.postsCount.toString(), "Posts"),
-                    _buildStatItem(user.followers.toString(), "Followers"),
-                    _buildStatItem(user.following.toString(), "Following"),
+                    _buildStatItem(displayUser.postsCount.toString(), "Posts"),
+                    _buildStatItem(
+                      displayUser.hideFollowersFollowing
+                          ? "-"
+                          : displayUser.followers.toString(),
+                      "Followers",
+                    ),
+                    _buildStatItem(
+                      displayUser.hideFollowersFollowing
+                          ? "-"
+                          : displayUser.following.toString(),
+                      "Following",
+                    ),
                   ],
                 ),
 
@@ -109,7 +152,15 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
                     height: 48,
                     child: ElevatedButton(
                       onPressed: () {
-                        socialProvider.toggleFollow(user.id);
+                        socialProvider.toggleFollow(displayUser.id);
+                        setState(() {
+                          // Manually toggle locally if waiting for fetch
+                          displayUser.isFollowing = !displayUser.isFollowing;
+                          if (displayUser.isFollowing)
+                            displayUser.followers++;
+                          else
+                            displayUser.followers--;
+                        });
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: isFollowing
@@ -139,25 +190,66 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
 
                 const SizedBox(height: 24),
 
-                // Divider/Grid Header
-                const Divider(height: 1, thickness: 1),
+                // Photo Grid (Fetch actual posts for this user)
+                FutureBuilder<List<Post>>(
+                  future: socialProvider.fetchUserPosts(displayUser.id),
+                  builder: (context, postsSnapshot) {
+                    if (postsSnapshot.connectionState ==
+                        ConnectionState.waiting) {
+                      return const Padding(
+                        padding: EdgeInsets.all(32.0),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    if (!postsSnapshot.hasData || postsSnapshot.data!.isEmpty) {
+                      return Padding(
+                        padding: const EdgeInsets.all(32.0),
+                        child: Text(
+                          "No posts yet",
+                          style: GoogleFonts.poppins(color: Colors.grey),
+                        ),
+                      );
+                    }
 
-                // Photo Grid (Mock posts for this user)
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: 9, // Mock 9 items
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    crossAxisSpacing: 2,
-                    mainAxisSpacing: 2,
-                  ),
-                  itemBuilder: (context, index) {
-                    return Container(
-                      color: Colors.grey[200],
-                      child: const Center(
-                        child: Icon(Icons.image, color: Colors.grey),
-                      ),
+                    final userPosts = postsSnapshot.data!;
+                    return GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: userPosts.length,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 2,
+                            mainAxisSpacing: 2,
+                          ),
+                      itemBuilder: (context, index) {
+                        final post = userPosts[index];
+                        return GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    PostDetailScreen(post: post),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            color: Colors.grey[200],
+                            child: userPosts[index].imageUrl != null
+                                ? Image.network(
+                                    userPosts[index].imageUrl!,
+                                    fit: BoxFit.cover,
+                                  )
+                                : const Center(
+                                    child: Icon(
+                                      Icons.image,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                          ),
+                        );
+                      },
                     );
                   },
                 ),

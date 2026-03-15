@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../services/database_service.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,10 +7,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../providers/social_provider.dart';
 import '../providers/user_provider.dart';
-import '../models/post_model.dart';
-import '../models/user_model.dart';
-import '../widgets/custom_button.dart';
-import '../widgets/custom_text_field.dart';
 
 class CreateJumpPostScreen extends StatefulWidget {
   const CreateJumpPostScreen({super.key});
@@ -184,55 +181,67 @@ class _CreateJumpPostScreenState extends State<CreateJumpPostScreen> {
       _isLoading = true;
     });
 
-    // Simulate network delay for better UX
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      final dbService = DatabaseService();
 
-    if (!mounted) return;
-
-    // Create a User object from UserProvider data
-    // Note: SocialProvider mostly uses its own mock users, but for new posts we use the current user.
-    // We should ideally sync them, but for now we convert on the fly.
-    final currentUser = User(
-      id: 'current_user', // Or userProvider.user?.id if available, but UserProvider structure is simple
-      name: userProvider.name,
-      profileImage: userProvider.profileImageFile != null
-          ? userProvider
-                .profileImageFile!
-                .path // Use file path if available
-          : userProvider.profileImage, // Or asset path/Url
-      bio: userProvider.bio,
-      followers: 0, // Placeholder
-      following: 0, // Placeholder
-      postsCount: 0, // Placeholder
-    );
-
-    final newPost = Post(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      roadName: roadName,
-      description: _descriptionController.text.trim(),
-      timeAgo: 'Just now',
-      author: currentUser,
-      color: Colors.blue[100]!, // Default color
-      likes: 0,
-      comments: [],
-      isLiked: false,
-      imageUrl: _imageFile?.path, // Pass file path
-      videoUrl: _videoFile?.path, // Pass file path
-    );
-
-    socialProvider.addPost(newPost);
-
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Jump Post for $roadName Created Successfully!'),
-          backgroundColor: Colors.green,
-        ),
+      // Ensure profile exists for this user (handles legacy users)
+      await dbService.ensureProfileExists(
+        id: userProvider.user.id,
+        email: userProvider.email,
+        name: userProvider.name,
+        profileImage: userProvider.profileImage,
       );
-      Navigator.of(context).pop(); // Return to feed
+
+      String? imageUrl;
+      String? videoUrl;
+
+      // Upload Media
+      if (_imageFile != null) {
+        imageUrl = await dbService.uploadMedia(_imageFile!, 'post-images');
+      } else if (_videoFile != null) {
+        videoUrl = await dbService.uploadMedia(_videoFile!, 'post-videos');
+      }
+
+      // Create Post
+      await dbService.createPost(
+        roadName: roadName,
+        description: _descriptionController.text.trim(),
+        authorId:
+            userProvider.user.id, // Ensure userProvider.user.id is correct
+        imageUrl: imageUrl,
+        videoUrl: videoUrl,
+      );
+
+      // Refresh Feed
+      await socialProvider.refreshFeed();
+
+      // Update local profile stats synchronously
+      userProvider.incrementPostsCount();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Jump Post for $roadName Created Successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.of(context).pop(); // Return to feed
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error creating post: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -273,7 +282,7 @@ class _CreateJumpPostScreenState extends State<CreateJumpPostScreen> {
             ),
             const SizedBox(height: 10),
             DropdownButtonFormField<String>(
-              value: _selectedRoad,
+              initialValue: _selectedRoad,
               decoration: InputDecoration(
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 15,

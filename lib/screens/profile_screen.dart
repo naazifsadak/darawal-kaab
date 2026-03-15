@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:darawalkaab/l10n/app_localizations.dart';
 import '../../providers/user_provider.dart';
 import '../../services/auth_service.dart';
 import 'edit_profile_screen.dart';
 import 'settings/help_center_screen.dart';
 import 'settings/settings_screen.dart';
 import 'welcome_screen.dart';
+import '../../models/post_model.dart';
+import '../../models/user_model.dart';
+import '../../providers/social_provider.dart';
+import 'post_detail_screen.dart'; // Added this import
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -16,290 +21,382 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  late Future<User?> _userProfileFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    _userProfileFuture = Provider.of<SocialProvider>(
+      context,
+      listen: false,
+    ).fetchUserProfile(userProvider.user.id);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<UserProvider>(
-      builder: (context, user, _) {
-        return Scaffold(
-          backgroundColor: Colors.white,
-          appBar: AppBar(
-            backgroundColor: Colors.white,
-            elevation: 0,
-            title: Text(
-              user.name,
-              style: GoogleFonts.poppins(
-                color: Colors.black,
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            centerTitle: false,
-            actions: [
-              // Menu Button
-              Container(
-                margin: const EdgeInsets.only(right: 16),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.grey[50],
-                ),
-                child: PopupMenuButton<String>(
-                  icon: const Icon(
-                    Icons.menu_rounded,
-                    color: Colors.black87,
-                    size: 24,
+      builder: (context, userProvider, _) {
+        return FutureBuilder<User?>(
+          future: _userProfileFuture,
+          builder: (context, snapshot) {
+            final displayUser = snapshot.data ?? userProvider.user;
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            final bgColor = isDark ? const Color(0xFF1a1a1a) : Colors.white;
+            final cardColor = isDark ? const Color(0xFF2C2C2C) : Colors.white;
+            final textColor = isDark ? Colors.white : Colors.black;
+            final text87Color = isDark ? Colors.white70 : Colors.black87;
+
+            return Scaffold(
+              backgroundColor: bgColor,
+              appBar: AppBar(
+                backgroundColor: bgColor,
+                elevation: 0,
+                title: Text(
+                  displayUser.name,
+                  style: GoogleFonts.poppins(
+                    color: textColor,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  color: Colors.white, // Ensure visibility
-                  offset: const Offset(0, 45),
-                  elevation: 4,
-                  onSelected: (value) {
-                    if (value == 'edit') {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const EditProfileScreen(),
-                        ),
-                      );
-                    } else if (value == 'settings') {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const SettingsScreen(),
-                        ),
-                      );
-                    } else if (value == 'logout') {
-                      _showLogoutDialog(context);
-                    } else if (value == 'help') {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const HelpCenterScreen(),
-                        ),
-                      );
-                    }
-                  },
-                  itemBuilder: (BuildContext context) {
-                    return [
-                      PopupMenuItem(
-                        value: 'edit',
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.edit_outlined,
-                              color: Colors.grey[700],
-                              size: 20,
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              "Edit Profile",
-                              style: GoogleFonts.poppins(
-                                color: Colors.black87,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'settings',
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.settings_outlined,
-                              color: Colors.grey[700],
-                              size: 20,
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              "Settings",
-                              style: GoogleFonts.poppins(
-                                color: Colors.black87,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'help',
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.help_outline,
-                              color: Colors.grey[700],
-                              size: 20,
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              "Help",
-                              style: GoogleFonts.poppins(
-                                color: Colors.black87,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const PopupMenuDivider(),
-                      PopupMenuItem(
-                        value: 'logout',
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.logout_rounded,
-                              color: Color(0xFFE53935),
-                              size: 20,
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              "Log Out",
-                              style: GoogleFonts.poppins(
-                                color: const Color(0xFFE53935),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ];
-                  },
                 ),
+                centerTitle: false,
+                actions: [
+                  // Menu Button
+                  Container(
+                    margin: const EdgeInsets.only(right: 16),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isDark ? Colors.grey[800] : Colors.grey[50],
+                    ),
+                    child: PopupMenuButton<String>(
+                      icon: Icon(
+                        Icons.menu_rounded,
+                        color: text87Color,
+                        size: 24,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      color: cardColor, // Ensure visibility
+                      offset: const Offset(0, 45),
+                      elevation: 4,
+                      onSelected: (value) {
+                        if (value == 'edit') {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const EditProfileScreen(),
+                            ),
+                          );
+                        } else if (value == 'settings') {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const SettingsScreen(),
+                            ),
+                          );
+                        } else if (value == 'logout') {
+                          _showLogoutDialog(context);
+                        } else if (value == 'help') {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const HelpCenterScreen(),
+                            ),
+                          );
+                        }
+                      },
+                      itemBuilder: (BuildContext context) {
+                        return [
+                          PopupMenuItem(
+                            value: 'edit',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.edit_outlined,
+                                  color: Colors.grey[700],
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  AppLocalizations.of(context)!.editProfile,
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'settings',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.settings_outlined,
+                                  color: Colors.grey[700],
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  AppLocalizations.of(context)!.settings,
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'help',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.help_outline,
+                                  color: Colors.grey[700],
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  AppLocalizations.of(context)!.helpCenter,
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const PopupMenuDivider(),
+                          PopupMenuItem(
+                            value: 'logout',
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.logout_rounded,
+                                  color: Color(0xFFE53935),
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  AppLocalizations.of(context)!.logOut,
+                                  style: GoogleFonts.poppins(
+                                    color: const Color(0xFFE53935),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ];
+                      },
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-          body: SingleChildScrollView(
-            child: Column(
-              children: [
-                const SizedBox(height: 20),
-                // Avatar
-                Center(
-                  child: GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const EditProfileScreen(),
+              body: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    const SizedBox(height: 20),
+                    // Avatar
+                    Center(
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const EditProfileScreen(),
+                            ),
+                          );
+                        },
+                        child: Stack(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(2), // Border width
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.grey[200]!,
+                                  width: 2,
+                                ),
+                              ),
+                              child: CircleAvatar(
+                                radius: 50,
+                                backgroundColor: Colors.grey,
+                                backgroundImage: displayUser.imageProvider,
+                              ),
+                            ),
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: const BoxDecoration(
+                                  color: Colors.blue,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.edit,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      );
-                    },
-                    child: Stack(
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Name
+                    Text(
+                      displayUser.name,
+                      style: GoogleFonts.poppins(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: textColor,
+                      ),
+                    ),
+
+                    // Bio
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 40,
+                        vertical: 8,
+                      ),
+                      child: Text(
+                        displayUser.bio,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Stats Row
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(2), // Border width
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.grey[200]!,
-                              width: 2,
-                            ),
-                          ),
-                          child: CircleAvatar(
-                            radius: 50,
-                            backgroundColor: Colors.grey,
-                            backgroundImage: user.imageProvider,
-                          ),
+                        _buildStatItem(
+                          displayUser.postsCount.toString(),
+                          AppLocalizations.of(context)!.posts,
+                          textColor,
                         ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: const BoxDecoration(
-                              color: Colors.blue,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.edit,
-                              color: Colors.white,
-                              size: 16,
-                            ),
-                          ),
+                        _buildStatItem(
+                          displayUser.followers.toString(),
+                          AppLocalizations.of(context)!.followers,
+                          textColor,
+                        ),
+                        _buildStatItem(
+                          displayUser.following.toString(),
+                          AppLocalizations.of(context)!.following,
+                          textColor,
                         ),
                       ],
                     ),
-                  ),
-                ),
-                const SizedBox(height: 16),
 
-                // Name
-                Text(
-                  user.name,
-                  style: GoogleFonts.poppins(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
-                  ),
-                ),
+                    const SizedBox(height: 24),
 
-                // Bio
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 40,
-                    vertical: 8,
-                  ),
-                  child: Text(
-                    user.bio,
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                      height: 1.5,
+                    // Follow Button
+                    const SizedBox(height: 12),
+
+                    const SizedBox(height: 24),
+
+                    // Divider/Grid Header
+                    const Divider(height: 1, thickness: 1),
+
+                    // Photo Grid
+                    FutureBuilder<List<Post>>(
+                      future: Provider.of<SocialProvider>(
+                        context,
+                        listen: false,
+                      ).fetchUserPosts(displayUser.id),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+                        if (snapshot.hasError) {
+                          return const Center(
+                            child: Text("Error loading posts"),
+                          );
+                        }
+                        final posts = snapshot.data ?? [];
+                        if (posts.isEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.all(20.0),
+                            child: Text(
+                              "No posts yet",
+                              style: GoogleFonts.poppins(color: Colors.grey),
+                            ),
+                          );
+                        }
+
+                        return GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: posts.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 3,
+                                crossAxisSpacing: 2,
+                                mainAxisSpacing: 2,
+                              ),
+                          itemBuilder: (context, index) {
+                            final post = posts[index];
+                            return GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        PostDetailScreen(post: post),
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                color: isDark
+                                    ? Colors.grey[800]
+                                    : Colors.grey[200],
+                                child: post.imageUrl != null
+                                    ? Image.network(
+                                        post.imageUrl!,
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                const Icon(Icons.error),
+                                      )
+                                    : const Center(
+                                        child: Icon(
+                                          Icons.videocam,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                              ),
+                            );
+                          },
+                        );
+                      },
                     ),
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // Stats Row
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _buildStatItem("12", "Posts"),
-                    _buildStatItem("120", "Followers"),
-                    _buildStatItem("45", "Following"),
                   ],
                 ),
-
-                const SizedBox(height: 24),
-
-                // Follow Button
-                const SizedBox(height: 12),
-
-                const SizedBox(height: 24),
-
-                // Divider/Grid Header
-                const Divider(height: 1, thickness: 1),
-
-                // Photo Grid
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: 9, // Mock 9 items
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    crossAxisSpacing: 2,
-                    mainAxisSpacing: 2,
-                  ),
-                  itemBuilder: (context, index) {
-                    return Container(
-                      color: Colors.grey[200],
-                      child: const Center(
-                        child: Icon(Icons.image, color: Colors.grey),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
   }
 
-  Widget _buildStatItem(String count, String label) {
+  Widget _buildStatItem(String count, String label, Color textColor) {
     return Column(
       children: [
         Text(
@@ -307,7 +404,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           style: GoogleFonts.poppins(
             fontSize: 18,
             fontWeight: FontWeight.bold,
-            color: Colors.black,
+            color: textColor,
           ),
         ),
         const SizedBox(height: 4),
@@ -327,7 +424,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text("Log Out"),
+        title: Text(AppLocalizations.of(context)!.logOut),
         content: const Text("Are you sure you want to log out?"),
         actions: [
           TextButton(
@@ -351,7 +448,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 (route) => false,
               );
             },
-            child: const Text("Log Out", style: TextStyle(color: Colors.red)),
+            child: Text(
+              AppLocalizations.of(context)!.logOut,
+              style: const TextStyle(color: Colors.red),
+            ),
           ),
         ],
       ),

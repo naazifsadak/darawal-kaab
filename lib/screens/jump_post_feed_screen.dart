@@ -4,16 +4,19 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../models/post_model.dart';
 import '../models/user_model.dart';
+import '../models/comment_model.dart';
 import '../providers/social_provider.dart';
 import '../providers/user_provider.dart';
 import 'create_jump_post_screen.dart';
 import 'other_user_profile_screen.dart';
 import 'profile_screen.dart';
+import 'notifications_screen.dart';
 import 'package:gal/gal.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import '../widgets/full_screen_image.dart';
 import '../widgets/post_video_player.dart';
+import 'package:darawalkaab/l10n/app_localizations.dart';
 
 class JumpPostFeedScreen extends StatefulWidget {
   const JumpPostFeedScreen({super.key});
@@ -31,6 +34,123 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
   String? _replyingToUserName;
   final FocusNode _commentFocusNode = FocusNode();
   final TextEditingController _commentController = TextEditingController();
+
+  Future<void> _confirmDeletePost(String postId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(AppLocalizations.of(context)!.deletePostTitle),
+        content: Text(AppLocalizations.of(context)!.deletePostContent),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(AppLocalizations.of(context)!.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text(AppLocalizations.of(context)!.delete),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      try {
+        await Provider.of<SocialProvider>(
+          context,
+          listen: false,
+        ).deletePost(postId);
+
+        // Update local profile stats synchronously
+        if (mounted) {
+          Provider.of<UserProvider>(
+            context,
+            listen: false,
+          ).decrementPostsCount();
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.postDeletedSuccess),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${AppLocalizations.of(context)!.errorDeletingPost}$e',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _showEditCommentDialog(
+    BuildContext context,
+    Post post,
+    Comment comment,
+  ) async {
+    final TextEditingController editController = TextEditingController(
+      text: comment.text,
+    );
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(AppLocalizations.of(context)!.editCommentTitle),
+        content: TextField(
+          controller: editController,
+          decoration: InputDecoration(
+            hintText: AppLocalizations.of(context)!.enterNewComment,
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(AppLocalizations.of(context)!.cancel),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (editController.text.trim().isNotEmpty) {
+                try {
+                  await Provider.of<SocialProvider>(
+                    context,
+                    listen: false,
+                  ).updateComment(
+                    post.id,
+                    comment.id,
+                    editController.text.trim(),
+                  );
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          '${AppLocalizations.of(context)!.errorUpdatingComment}$e',
+                        ),
+                      ),
+                    );
+                  }
+                }
+              }
+            },
+            child: Text(AppLocalizations.of(context)!.save),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -56,127 +176,151 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
               maxChildSize: 0.9,
               expand: false,
               builder: (context, scrollController) {
-                return Container(
-                  padding: EdgeInsets.only(
-                    left: 16,
-                    right: 16,
-                    top: 16,
-                    bottom: MediaQuery.of(context).viewInsets.bottom,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 40,
-                          height: 5,
-                          decoration: BoxDecoration(
-                            color: Colors.grey[300],
-                            borderRadius: BorderRadius.circular(2.5),
+                return FutureBuilder<List<Comment>>(
+                  future: Provider.of<SocialProvider>(
+                    context,
+                    listen: false,
+                  ).fetchCommentsForPost(post.id),
+                  builder: (context, snapshot) {
+                    return Container(
+                      padding: EdgeInsets.only(
+                        left: 16,
+                        right: 16,
+                        top: 16,
+                        bottom: MediaQuery.of(context).viewInsets.bottom,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Center(
+                            child: Container(
+                              width: 40,
+                              height: 5,
+                              decoration: BoxDecoration(
+                                color: Colors.grey[300],
+                                borderRadius: BorderRadius.circular(2.5),
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        "Comments (${post.commentsCount})",
-                        style: GoogleFonts.poppins(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Expanded(
-                        child: post.comments.isEmpty
-                            ? Center(
-                                child: Text(
-                                  "No comments yet. Be the first!",
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                              )
-                            : ListView.builder(
-                                controller: scrollController,
-                                itemCount: post.comments.length,
-                                itemBuilder: (context, index) {
-                                  final comment = post.comments[index];
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 16),
-                                    child: Column(
-                                      // Main Column for comment + replies
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
+                          const SizedBox(height: 16),
+                          Text(
+                            "${AppLocalizations.of(context)!.comments} (${post.commentsCount})",
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Expanded(
+                            child:
+                                snapshot.connectionState ==
+                                    ConnectionState.waiting
+                                ? const Center(
+                                    child: CircularProgressIndicator(),
+                                  )
+                                : (snapshot.data == null ||
+                                      snapshot.data!.isEmpty)
+                                ? Center(
+                                    child: Text(
+                                      AppLocalizations.of(
+                                        context,
+                                      )!.noCommentsYet,
+                                      style: GoogleFonts.poppins(
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  )
+                                : ListView.builder(
+                                    controller: scrollController,
+                                    itemCount: snapshot.data!.length,
+                                    itemBuilder: (context, index) {
+                                      final comment = snapshot.data![index];
+                                      return Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 16,
+                                        ),
+                                        child: Column(
+                                          // Main Column for comment + replies
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
                                           children: [
-                                            GestureDetector(
-                                              onTap: () =>
-                                                  _navigateToUserProfile(
-                                                    comment.author,
+                                            Row(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                GestureDetector(
+                                                  onTap: () =>
+                                                      _navigateToUserProfile(
+                                                        comment.author,
+                                                      ),
+                                                  child: CircleAvatar(
+                                                    backgroundImage: comment
+                                                        .author
+                                                        .imageProvider,
+                                                    radius: 18,
                                                   ),
-                                              child: CircleAvatar(
-                                                backgroundImage: comment
-                                                    .author
-                                                    .imageProvider,
-                                                radius: 18,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    comment.author.name,
-                                                    style: GoogleFonts.poppins(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      fontSize: 14,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  Text(
-                                                    comment.text,
-                                                    style: GoogleFonts.poppins(
-                                                      fontSize: 14,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  Row(
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
                                                     children: [
                                                       Text(
-                                                        "${comment.timestamp.hour}:${comment.timestamp.minute.toString().padLeft(2, '0')}",
+                                                        comment.author.name,
                                                         style:
                                                             GoogleFonts.poppins(
-                                                              fontSize: 12,
-                                                              color:
-                                                                  Colors.grey,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600,
+                                                              fontSize: 14,
                                                             ),
                                                       ),
-                                                      const SizedBox(width: 16),
-                                                      GestureDetector(
-                                                        onTap: () {
-                                                          setModalState(() {
-                                                            _replyingToCommentId =
-                                                                comment.id;
-                                                            _replyingToUserName =
-                                                                comment
-                                                                    .author
-                                                                    .name;
-                                                          });
-                                                          FocusScope.of(
-                                                            context,
-                                                          ).requestFocus(
-                                                            _commentFocusNode,
-                                                          );
-                                                        },
-                                                        child: Text(
-                                                          "Reply",
-                                                          style:
-                                                              GoogleFonts.poppins(
+                                                      const SizedBox(height: 4),
+                                                      Text(
+                                                        comment.text,
+                                                        style:
+                                                            GoogleFonts.poppins(
+                                                              fontSize: 14,
+                                                            ),
+                                                      ),
+                                                      const SizedBox(height: 4),
+                                                      Row(
+                                                        children: [
+                                                          Text(
+                                                            "${comment.timestamp.hour}:${comment.timestamp.minute.toString().padLeft(2, '0')}",
+                                                            style:
+                                                                GoogleFonts.poppins(
+                                                                  fontSize: 12,
+                                                                  color: Colors
+                                                                      .grey,
+                                                                ),
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 16,
+                                                          ),
+                                                          GestureDetector(
+                                                            onTap: () {
+                                                              setModalState(() {
+                                                                _replyingToCommentId =
+                                                                    comment.id;
+                                                                _replyingToUserName =
+                                                                    comment
+                                                                        .author
+                                                                        .name;
+                                                              });
+                                                              FocusScope.of(
+                                                                context,
+                                                              ).requestFocus(
+                                                                _commentFocusNode,
+                                                              );
+                                                            },
+                                                            child: Text(
+                                                              AppLocalizations.of(
+                                                                context,
+                                                              )!.reply,
+                                                              style: GoogleFonts.poppins(
                                                                 fontSize: 12,
                                                                 fontWeight:
                                                                     FontWeight
@@ -184,182 +328,258 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
                                                                 color: Colors
                                                                     .grey[600],
                                                               ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        // Display Replies
-                                        if (comment.replies.isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              top: 12,
-                                              left: 48, // Indent replies
-                                            ),
-                                            child: Column(
-                                              children: comment.replies
-                                                  .map(
-                                                    (reply) => Padding(
-                                                      padding:
-                                                          const EdgeInsets.only(
-                                                            bottom: 12,
-                                                          ),
-                                                      child: Row(
-                                                        crossAxisAlignment:
-                                                            CrossAxisAlignment
-                                                                .start,
-                                                        children: [
-                                                          GestureDetector(
-                                                            onTap: () =>
-                                                                _navigateToUserProfile(
-                                                                  reply.author,
-                                                                ),
-                                                            child: CircleAvatar(
-                                                              backgroundImage: reply
-                                                                  .author
-                                                                  .imageProvider,
-                                                              radius:
-                                                                  14, // Smaller avatar for replies
-                                                            ),
-                                                          ), // Added closing parenthesis for GestureDetector and comma
-                                                          const SizedBox(
-                                                            width: 8,
-                                                          ),
-                                                          Expanded(
-                                                            child: Column(
-                                                              crossAxisAlignment:
-                                                                  CrossAxisAlignment
-                                                                      .start,
-                                                              children: [
-                                                                Text(
-                                                                  reply
-                                                                      .author
-                                                                      .name,
-                                                                  style: GoogleFonts.poppins(
-                                                                    fontWeight:
-                                                                        FontWeight
-                                                                            .w600,
-                                                                    fontSize:
-                                                                        13,
-                                                                  ),
-                                                                ),
-                                                                Text(
-                                                                  reply.text,
-                                                                  style:
-                                                                      GoogleFonts.poppins(
-                                                                        fontSize:
-                                                                            13,
-                                                                      ),
-                                                                ),
-                                                              ],
                                                             ),
                                                           ),
                                                         ],
                                                       ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                if (comment.author.id ==
+                                                    Provider.of<UserProvider>(
+                                                      context,
+                                                      listen: false,
+                                                    ).user.id)
+                                                  PopupMenuButton<String>(
+                                                    icon: const Icon(
+                                                      Icons.more_vert,
+                                                      size: 16,
+                                                      color: Colors.grey,
                                                     ),
-                                                  )
-                                                  .toList(),
+                                                    onSelected: (value) async {
+                                                      if (value == 'edit') {
+                                                        _showEditCommentDialog(
+                                                          context,
+                                                          post,
+                                                          comment,
+                                                        );
+                                                      } else if (value ==
+                                                          'delete') {
+                                                        try {
+                                                          await Provider.of<
+                                                                SocialProvider
+                                                              >(
+                                                                context,
+                                                                listen: false,
+                                                              )
+                                                              .deleteComment(
+                                                                post.id,
+                                                                comment.id,
+                                                              );
+                                                          // Tell the modal to rebuild to fetch updated list
+                                                          setModalState(() {});
+                                                        } catch (e) {
+                                                          debugPrint(
+                                                            "Error deleting comment: $e",
+                                                          );
+                                                        }
+                                                      }
+                                                    },
+                                                    itemBuilder: (context) => [
+                                                      PopupMenuItem(
+                                                        value: 'edit',
+                                                        child: Text(
+                                                          AppLocalizations.of(
+                                                            context,
+                                                          )!.edit,
+                                                        ),
+                                                      ),
+                                                      PopupMenuItem(
+                                                        value: 'delete',
+                                                        child: Text(
+                                                          AppLocalizations.of(
+                                                            context,
+                                                          )!.delete,
+                                                          style:
+                                                              const TextStyle(
+                                                                color:
+                                                                    Colors.red,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                              ],
                                             ),
-                                          ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              ),
-                      ),
-                      const Divider(),
-                      if (_replyingToCommentId != null)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
+                                            // Display Replies
+                                            if (comment.replies.isNotEmpty)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                  top: 12,
+                                                  left: 48, // Indent replies
+                                                ),
+                                                child: Column(
+                                                  children: comment.replies
+                                                      .map(
+                                                        (reply) => Padding(
+                                                          padding:
+                                                              const EdgeInsets.only(
+                                                                bottom: 12,
+                                                              ),
+                                                          child: Row(
+                                                            crossAxisAlignment:
+                                                                CrossAxisAlignment
+                                                                    .start,
+                                                            children: [
+                                                              GestureDetector(
+                                                                onTap: () =>
+                                                                    _navigateToUserProfile(
+                                                                      reply
+                                                                          .author,
+                                                                    ),
+                                                                child: CircleAvatar(
+                                                                  backgroundImage:
+                                                                      reply
+                                                                          .author
+                                                                          .imageProvider,
+                                                                  radius:
+                                                                      14, // Smaller avatar for replies
+                                                                ),
+                                                              ), // Added closing parenthesis for GestureDetector and comma
+                                                              const SizedBox(
+                                                                width: 8,
+                                                              ),
+                                                              Expanded(
+                                                                child: Column(
+                                                                  crossAxisAlignment:
+                                                                      CrossAxisAlignment
+                                                                          .start,
+                                                                  children: [
+                                                                    Text(
+                                                                      reply
+                                                                          .author
+                                                                          .name,
+                                                                      style: GoogleFonts.poppins(
+                                                                        fontWeight:
+                                                                            FontWeight.w600,
+                                                                        fontSize:
+                                                                            13,
+                                                                      ),
+                                                                    ),
+                                                                    Text(
+                                                                      reply
+                                                                          .text,
+                                                                      style: GoogleFonts.poppins(
+                                                                        fontSize:
+                                                                            13,
+                                                                      ),
+                                                                    ),
+                                                                  ],
+                                                                ),
+                                                              ),
+                                                            ],
+                                                          ),
+                                                        ),
+                                                      )
+                                                      .toList(),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
                           ),
-                          color: Colors.grey[200],
-                          child: Row(
-                            children: [
-                              Text(
-                                "Replying to $_replyingToUserName",
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
+                          const Divider(),
+                          if (_replyingToCommentId != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              color: Colors.grey[200],
+                              child: Row(
+                                children: [
+                                  Text(
+                                    "${AppLocalizations.of(context)!.replyingTo}$_replyingToUserName",
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  IconButton(
+                                    icon: const Icon(Icons.close, size: 16),
+                                    onPressed: () {
+                                      setModalState(() {
+                                        _replyingToCommentId = null;
+                                        _replyingToUserName = null;
+                                      });
+                                    },
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16, top: 8),
+                            child: TextField(
+                              controller: _commentController,
+                              focusNode: _commentFocusNode,
+                              decoration: InputDecoration(
+                                hintText: _replyingToCommentId != null
+                                    ? "${AppLocalizations.of(context)!.replyingTo}$_replyingToUserName..."
+                                    : AppLocalizations.of(
+                                        context,
+                                      )!.addCommentHint,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 8,
+                                ),
+                                suffixIcon: IconButton(
+                                  icon: const Icon(
+                                    Icons.send,
+                                    color: Colors.blue,
+                                  ),
+                                  onPressed: () {
+                                    if (_commentController.text
+                                        .trim()
+                                        .isEmpty) {
+                                      return;
+                                    }
+
+                                    final text = _commentController.text.trim();
+                                    final currentUser =
+                                        Provider.of<UserProvider>(
+                                          context,
+                                          listen: false,
+                                        ).user;
+                                    if (_replyingToCommentId != null) {
+                                      Provider.of<SocialProvider>(
+                                        context,
+                                        listen: false,
+                                      ).replyToComment(
+                                        post.id,
+                                        _replyingToCommentId!,
+                                        text,
+                                        currentUser,
+                                      );
+                                    } else {
+                                      Provider.of<SocialProvider>(
+                                        context,
+                                        listen: false,
+                                      ).addComment(post.id, text, currentUser);
+                                    }
+
+                                    _commentController.clear();
+                                    setModalState(() {
+                                      _replyingToCommentId = null;
+                                      _replyingToUserName = null;
+                                    });
+                                    // Close keyboard logic if needed, or keep open
+                                  },
                                 ),
                               ),
-                              const Spacer(),
-                              IconButton(
-                                icon: const Icon(Icons.close, size: 16),
-                                onPressed: () {
-                                  setModalState(() {
-                                    _replyingToCommentId = null;
-                                    _replyingToUserName = null;
-                                  });
-                                },
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                              ),
-                            ],
-                          ),
-                        ),
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 16, top: 8),
-                        child: TextField(
-                          controller: _commentController,
-                          focusNode: _commentFocusNode,
-                          decoration: InputDecoration(
-                            hintText: _replyingToCommentId != null
-                                ? "Reply to $_replyingToUserName..."
-                                : "Add a comment...",
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(30),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 8,
-                            ),
-                            suffixIcon: IconButton(
-                              icon: const Icon(Icons.send, color: Colors.blue),
-                              onPressed: () {
-                                if (_commentController.text.trim().isEmpty)
-                                  return;
-
-                                final text = _commentController.text.trim();
-                                final currentUser = Provider.of<UserProvider>(
-                                  context,
-                                  listen: false,
-                                ).user;
-                                if (_replyingToCommentId != null) {
-                                  Provider.of<SocialProvider>(
-                                    context,
-                                    listen: false,
-                                  ).replyToComment(
-                                    post.id,
-                                    _replyingToCommentId!,
-                                    text,
-                                    currentUser,
-                                  );
-                                } else {
-                                  Provider.of<SocialProvider>(
-                                    context,
-                                    listen: false,
-                                  ).addComment(post.id, text, currentUser);
-                                }
-
-                                _commentController.clear();
-                                setModalState(() {
-                                  _replyingToCommentId = null;
-                                  _replyingToUserName = null;
-                                });
-                                // Close keyboard logic if needed, or keep open
-                              },
                             ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 );
               },
             );
@@ -396,8 +616,8 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Saved to Gallery!"),
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.savedToGallery),
             backgroundColor: Colors.green,
           ),
         );
@@ -407,7 +627,9 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Failed to save media: $e"),
+            content: Text(
+              "${AppLocalizations.of(context)!.failedToSaveMedia}$e",
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -452,40 +674,98 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
               .toList();
         }
 
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final bgColor = isDark
+            ? const Color(0xFF1a1a1a)
+            : const Color(0xFFF5F5F5);
+        final appBarColor = isDark ? const Color(0xFF1a1a1a) : Colors.white;
+        final cardColor = isDark ? const Color(0xFF2C2C2C) : Colors.white;
+        final textColor = isDark ? Colors.white : Colors.black;
+        final text87Color = isDark ? Colors.white70 : Colors.black87;
+
         return Scaffold(
-          backgroundColor: const Color(0xFFF5F5F5), // Light grey background
+          backgroundColor: bgColor,
           appBar: AppBar(
-            backgroundColor: Colors.white,
+            backgroundColor: appBarColor,
             elevation: 0,
             leading: IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.black),
+              icon: Icon(Icons.arrow_back, color: textColor),
               onPressed: () => Navigator.of(context).pop(),
             ),
             title: Text(
-              "Jump Post",
+              AppLocalizations.of(context)!.jumpPostTitle,
               style: GoogleFonts.poppins(
-                color: Colors.black,
+                color: textColor,
                 fontSize: 20,
                 fontWeight: FontWeight.w600,
               ),
             ),
             centerTitle: true,
+            actions: [
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      Icons.notifications_none,
+                      color: textColor,
+                      size: 28,
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const NotificationsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  if (socialProvider.unreadNotificationsCount > 0)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          socialProvider.unreadNotificationsCount > 9
+                              ? '9+'
+                              : socialProvider.unreadNotificationsCount
+                                    .toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 8),
+            ],
           ),
           body: Column(
             children: [
               // Search Bar
               Container(
-                color: Colors.white,
+                color: appBarColor,
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 child: Container(
                   height: 50,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: cardColor,
                     borderRadius: BorderRadius.circular(25),
-                    border: Border.all(color: Colors.grey[300]!, width: 1.5),
+                    border: Border.all(
+                      color: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+                      width: 1.5,
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
+                        color: Colors.black.withValues(alpha: 0.08),
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       ),
@@ -499,12 +779,12 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
                       });
                     },
                     style: GoogleFonts.poppins(
-                      color: Colors.black87,
+                      color: text87Color,
                       fontWeight: FontWeight.w600,
                       fontSize: 15,
                     ),
                     decoration: InputDecoration(
-                      hintText: "Search roads or streets...",
+                      hintText: AppLocalizations.of(context)!.searchRoadsHint,
                       hintStyle: GoogleFonts.poppins(
                         color: Colors.grey[500],
                         fontWeight: FontWeight.w500,
@@ -527,20 +807,23 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
                 child: filteredPosts.isEmpty
                     ? Center(
                         child: Text(
-                          "No posts found",
+                          AppLocalizations.of(context)!.noPostsFound,
                           style: GoogleFonts.poppins(
                             color: Colors.grey[600],
                             fontSize: 16,
                           ),
                         ),
                       )
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: filteredPosts.length,
-                        itemBuilder: (context, index) {
-                          final post = filteredPosts[index];
-                          return _buildPostCard(context, post);
-                        },
+                    : RefreshIndicator(
+                        onRefresh: () => socialProvider.refreshFeed(),
+                        child: ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: filteredPosts.length,
+                          itemBuilder: (context, index) {
+                            final post = filteredPosts[index];
+                            return _buildPostCard(context, post);
+                          },
+                        ),
                       ),
               ),
             ],
@@ -563,10 +846,14 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
   }
 
   Widget _buildPostCard(BuildContext context, Post post) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = isDark ? const Color(0xFF2C2C2C) : Colors.white;
+    final textColor = isDark ? Colors.white : Colors.black;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(20),
         boxShadow: const [
           BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 4)),
@@ -583,7 +870,7 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
               style: GoogleFonts.poppins(
                 fontSize: 22, // Increased size
                 fontWeight: FontWeight.w800, // Extra Bold
-                color: Colors.black, // Pure black
+                color: textColor, // Pure black or white
               ),
             ),
           ),
@@ -629,7 +916,7 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
               post.description,
               style: GoogleFonts.poppins(
                 fontSize: 16, // Increased size
-                color: Colors.black, // Pure black for strong visibility
+                color: textColor, // Pure black or white for strong visibility
                 height: 1.5, // Better line spacing
                 fontWeight: FontWeight.w500, // Medium weight
               ),
@@ -658,7 +945,7 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        "Posted by",
+                        AppLocalizations.of(context)!.postedBy,
                         style: GoogleFonts.poppins(
                           fontSize: 12,
                           color: Colors.grey[700], // Darker grey
@@ -670,7 +957,7 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
                         style: GoogleFonts.poppins(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
-                          color: Colors.black, // Pure black
+                          color: textColor, // Pure black or white
                         ),
                       ),
                     ],
@@ -681,10 +968,29 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
                   post.timeAgo,
                   style: GoogleFonts.poppins(
                     fontSize: 12,
-                    color: Colors.grey[800], // Darker grey
+                    color: Colors.grey[800],
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+                if (post.author.id ==
+                    Provider.of<UserProvider>(context, listen: false).user.id)
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, color: Colors.grey),
+                    onSelected: (value) {
+                      if (value == 'delete') {
+                        _confirmDeletePost(post.id);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Text(
+                          AppLocalizations.of(context)!.deletePost,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -697,21 +1003,24 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
               children: [
                 _buildLikeButton(context, post),
                 _buildActionButton(
+                  context,
                   icon: Icons.chat_bubble_outline,
                   label: post.commentsCount.toString(),
                   onTap: () => _showComments(context, post),
                 ),
                 _buildActionButton(
+                  context,
                   icon: Icons.share_outlined,
-                  label: "Share",
+                  label: AppLocalizations.of(context)!.share,
                   onTap: () {
                     // Implement Share
                   },
                 ),
                 if (post.videoUrl != null || post.imageUrl != null)
                   _buildActionButton(
+                    context,
                     icon: Icons.download_rounded,
-                    label: "Save",
+                    label: AppLocalizations.of(context)!.save,
                     onTap: () {
                       if (post.videoUrl != null) {
                         _downloadMedia(post.videoUrl!, true);
@@ -729,6 +1038,8 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
   }
 
   Widget _buildLikeButton(BuildContext context, Post post) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final text87Color = isDark ? Colors.white70 : Colors.black87;
     return InkWell(
       onTap: () {
         Provider.of<SocialProvider>(context, listen: false).toggleLike(post.id);
@@ -738,14 +1049,14 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
           Icon(
             post.isLiked ? Icons.favorite : Icons.favorite_border,
             size: 22,
-            color: post.isLiked ? Colors.red : Colors.black87,
+            color: post.isLiked ? Colors.red : text87Color,
           ),
           const SizedBox(width: 6),
           Text(
             post.likes.toString(),
             style: GoogleFonts.poppins(
               fontSize: 14,
-              color: Colors.black87, // Darker text
+              color: text87Color, // Darker text
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -791,22 +1102,25 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
     }
   }
 
-  Widget _buildActionButton({
+  Widget _buildActionButton(
+    BuildContext context, {
     required IconData icon,
     required String label,
     required VoidCallback onTap,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final text87Color = isDark ? Colors.white70 : Colors.black87;
     return InkWell(
       onTap: onTap,
       child: Row(
         children: [
-          Icon(icon, size: 22, color: Colors.black87), // Darker icon
+          Icon(icon, size: 22, color: text87Color), // Darker icon
           const SizedBox(width: 6),
           Text(
             label,
             style: GoogleFonts.poppins(
               fontSize: 14,
-              color: Colors.black87, // Darker text
+              color: text87Color, // Darker text
               fontWeight: FontWeight.w600,
             ),
           ),

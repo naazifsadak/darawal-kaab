@@ -6,10 +6,11 @@ class User {
   final String name;
   final String profileImage;
   final String bio;
-  final int followers;
-  final int following;
-  final int postsCount;
+  int followers;
+  int following;
+  int postsCount;
   bool isFollowing;
+  bool hideFollowersFollowing;
 
   User({
     required this.id,
@@ -20,6 +21,7 @@ class User {
     required this.following,
     required this.postsCount,
     this.isFollowing = false,
+    this.hideFollowersFollowing = false,
   });
 
   ImageProvider get imageProvider {

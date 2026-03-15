@@ -1,11 +1,47 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
 import '../../models/service_place.dart';
+import '../../providers/favorites_provider.dart';
+import 'map_screen.dart';
+import 'package:darawalkaab/l10n/app_localizations.dart';
 
 class ServiceDetailScreen extends StatelessWidget {
   final ServicePlace place;
 
   const ServiceDetailScreen({super.key, required this.place});
+
+  Future<void> _makePhoneCall(String phoneNumber) async {
+    final Uri launchUri = Uri(scheme: 'tel', path: phoneNumber);
+    if (!await launchUrl(launchUri)) {
+      // Handle error, maybe show a snackbar
+      debugPrint('Could not launch $launchUri');
+    }
+  }
+
+  Future<void> _launchMaps(double lat, double lng) async {
+    // Defines the google maps url
+    final Uri googleMapsUrl = Uri.parse("google.navigation:q=$lat,$lng&mode=d");
+    final Uri appleMapsUrl = Uri.parse(
+      "https://maps.apple.com/?daddr=$lat,$lng",
+    );
+
+    if (await canLaunchUrl(googleMapsUrl)) {
+      await launchUrl(googleMapsUrl);
+    } else if (await canLaunchUrl(appleMapsUrl)) {
+      await launchUrl(appleMapsUrl);
+    } else {
+      // Fallback to web
+      final Uri webUrl = Uri.parse(
+        "https://www.google.com/maps/dir/?api=1&destination=$lat,$lng",
+      );
+      if (!await launchUrl(webUrl, mode: LaunchMode.externalApplication)) {
+        debugPrint('Could not launch maps');
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,15 +61,47 @@ class ServiceDetailScreen extends StatelessWidget {
               ),
               onPressed: () => Navigator.pop(context),
             ),
+            actions: [
+              Consumer<FavoritesProvider>(
+                builder: (context, favoritesProvider, child) {
+                  final isFavorite = favoritesProvider.isFavorite(place.id);
+                  return IconButton(
+                    icon: Icon(
+                      isFavorite ? Icons.favorite : Icons.favorite_border,
+                      color: isFavorite ? Colors.red : Colors.white,
+                      shadows: const [
+                        Shadow(color: Colors.black, blurRadius: 10),
+                      ],
+                    ),
+                    onPressed: () {
+                      favoritesProvider.toggleFavorite(place);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            isFavorite
+                                ? AppLocalizations.of(
+                                    context,
+                                  )!.removedFromFavorites
+                                : AppLocalizations.of(
+                                    context,
+                                  )!.addedToFavorites,
+                          ),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 fit: StackFit.expand,
                 children: [
                   // Background Image/Placeholder
-                  // Background Image/Placeholder
                   Container(
                     color: Colors.grey[300],
-                    child: Image.asset(
+                    child: Image.network(
                       place.imageUrl,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) {
@@ -105,7 +173,7 @@ class ServiceDetailScreen extends StatelessWidget {
                             ),
                             const SizedBox(width: 12),
                             Text(
-                              "${place.distance} km away",
+                              "${place.distance.toStringAsFixed(1)} km away",
                               style: GoogleFonts.poppins(
                                 color: Colors.white70,
                                 fontSize: 13,
@@ -149,6 +217,84 @@ class ServiceDetailScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Map Preview
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => MapScreen(
+                              places: [place], // Pass only this place
+                              initialSelectedPlace: place,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        height: 150,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          color: Colors.grey[200],
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Stack(
+                          children: [
+                            // Placeholder Map Image
+                            GoogleMap(
+                              initialCameraPosition: CameraPosition(
+                                target: LatLng(place.latitude, place.longitude),
+                                zoom: 15,
+                              ),
+                              markers: {
+                                Marker(
+                                  markerId: MarkerId(place.id),
+                                  position: LatLng(
+                                    place.latitude,
+                                    place.longitude,
+                                  ),
+                                ),
+                              },
+                              zoomControlsEnabled: false,
+                              scrollGesturesEnabled: false,
+                              rotateGesturesEnabled: false,
+                              tiltGesturesEnabled: false,
+                              myLocationButtonEnabled: false,
+                              mapToolbarEnabled: false,
+                            ),
+                            // Overlay to make it tappable and indicate interaction
+                            Container(
+                              color: Colors
+                                  .transparent, // Ensures gestures are caught
+                            ),
+                            Positioned(
+                              bottom: 8,
+                              right: 8,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  AppLocalizations.of(context)!.viewOnMap,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
                     // Location
                     Row(
                       children: [
@@ -230,10 +376,10 @@ class ServiceDetailScreen extends StatelessWidget {
                       children: [
                         Expanded(
                           child: ElevatedButton.icon(
-                            onPressed: () {},
+                            onPressed: () => _makePhoneCall(place.phone),
                             icon: const Icon(Icons.call, color: Colors.white),
                             label: Text(
-                              "Call",
+                              AppLocalizations.of(context)!.call,
                               style: GoogleFonts.poppins(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -255,13 +401,14 @@ class ServiceDetailScreen extends StatelessWidget {
                         const SizedBox(width: 16),
                         Expanded(
                           child: ElevatedButton.icon(
-                            onPressed: () {},
+                            onPressed: () =>
+                                _launchMaps(place.latitude, place.longitude),
                             icon: const Icon(
                               Icons.directions,
                               color: Colors.white,
                             ),
                             label: Text(
-                              "Directions",
+                              AppLocalizations.of(context)!.directions,
                               style: GoogleFonts.poppins(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -298,7 +445,7 @@ class ServiceDetailScreen extends StatelessWidget {
                           elevation: 2,
                         ),
                         child: Text(
-                          "Read Reviews",
+                          AppLocalizations.of(context)!.readReviews,
                           style: GoogleFonts.poppins(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
@@ -364,7 +511,7 @@ class ServiceDetailScreen extends StatelessWidget {
           color: Colors.white,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 10,
               offset: const Offset(0, -5),
             ),

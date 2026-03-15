@@ -1,333 +1,410 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../models/service_place.dart';
-import '../../data/mock_places.dart';
+import '../../widgets/glass_container.dart';
+import '../../services/location_service.dart';
+import '../../services/google_places_service.dart';
+import 'package:provider/provider.dart';
+import '../../providers/favorites_provider.dart';
 import 'service_detail_screen.dart';
+import 'map_screen.dart';
+import 'package:darawalkaab/l10n/app_localizations.dart';
 
 class ServiceListScreen extends StatefulWidget {
-  final ServiceType serviceType;
+  final String title;
+  final ServiceType type;
+  final LatLng? userLocation;
 
-  const ServiceListScreen({super.key, required this.serviceType});
+  const ServiceListScreen({
+    super.key,
+    required this.title,
+    required this.type,
+    this.userLocation,
+  });
 
   @override
   State<ServiceListScreen> createState() => _ServiceListScreenState();
 }
 
 class _ServiceListScreenState extends State<ServiceListScreen> {
-  late List<ServicePlace> _places;
-  String _searchQuery = "";
+  bool _showMap = false;
+  bool _isLoading = true;
+  List<ServicePlace> _fetchedPlaces = [];
+  late List<ServicePlace> _sortedPlaces;
+  StreamSubscription<Position>? _positionSubscription;
+  LatLng? _lastFetchLocation;
 
   @override
   void initState() {
     super.initState();
-    _places = widget.serviceType == ServiceType.gasStation
-        ? mockGasStations
-        : mockRepairShops;
+    _sortedPlaces = [];
+    _initData();
+  }
+
+  @override
+  void dispose() {
+    _positionSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _launchMaps(double lat, double lng) async {
+    final Uri googleMapsUrl = Uri.parse("google.navigation:q=$lat,$lng&mode=d");
+    final Uri appleMapsUrl = Uri.parse(
+      "https://maps.apple.com/?daddr=$lat,$lng",
+    );
+
+    if (await canLaunchUrl(googleMapsUrl)) {
+      await launchUrl(googleMapsUrl);
+    } else if (await canLaunchUrl(appleMapsUrl)) {
+      await launchUrl(appleMapsUrl);
+    } else {
+      final Uri webUrl = Uri.parse(
+        "https://www.google.com/maps/dir/?api=1&destination=$lat,$lng",
+      );
+      if (!await launchUrl(webUrl, mode: LaunchMode.externalApplication)) {
+        debugPrint('Could not launch maps');
+      }
+    }
+  }
+
+  Future<void> _initData() async {
+    LatLng loc = widget.userLocation ?? const LatLng(2.046934, 45.318162);
+    _lastFetchLocation = loc;
+
+    // Initial fetch using available location
+    final googlePlaces = GooglePlacesService();
+    _fetchedPlaces = await googlePlaces.fetchNearbyPlaces(
+      loc.latitude,
+      loc.longitude,
+      widget.type,
+    );
+
+    if (mounted) {
+      setState(() {
+        _sortWithLocation(loc);
+        _isLoading = false;
+      });
+    }
+
+    // Try to get an updated precise location and start listening
+    try {
+      final locationService = LocationService();
+      final position = await locationService.getCurrentLocation();
+      if (position != null) {
+        loc = LatLng(position.latitude, position.longitude);
+        if (mounted) _sortWithLocation(loc); // resort with precision
+      }
+
+      // Start listening to continuous location updates
+      _positionSubscription = locationService.getPositionStream()?.listen((
+        Position newPosition,
+      ) async {
+        final currentLoc = LatLng(newPosition.latitude, newPosition.longitude);
+
+        if (_lastFetchLocation != null) {
+          final double distance = Geolocator.distanceBetween(
+            _lastFetchLocation!.latitude,
+            _lastFetchLocation!.longitude,
+            currentLoc.latitude,
+            currentLoc.longitude,
+          );
+
+          // Re-fetch from OSM if user has moved more than 5000 meters (5km)
+          if (distance > 5000) {
+            _lastFetchLocation = currentLoc;
+            final googlePlaces = GooglePlacesService();
+            final newPlaces = await googlePlaces.fetchNearbyPlaces(
+              currentLoc.latitude,
+              currentLoc.longitude,
+              widget.type,
+            );
+            if (mounted) {
+              setState(() {
+                _fetchedPlaces = newPlaces;
+                _sortWithLocation(currentLoc);
+              });
+            }
+            return;
+          }
+        }
+
+        if (mounted) {
+          setState(() {
+            _sortWithLocation(currentLoc);
+          });
+        }
+      });
+    } catch (e) {
+      // If error, fall back to initial sort
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _sortWithLocation(LatLng loc) {
+    _sortedPlaces = _fetchedPlaces.map((place) {
+      final double distanceInMeters = Geolocator.distanceBetween(
+        loc.latitude,
+        loc.longitude,
+        place.latitude,
+        place.longitude,
+      );
+      // Create a new ServicePlace with updated distance (in km)
+      return ServicePlace(
+        id: place.id,
+        name: place.name,
+        address: place.address,
+        distance: distanceInMeters / 1000,
+        rating: place.rating,
+        status: place.status,
+        openHours: place.openHours,
+        imageUrl: place.imageUrl,
+        type: place.type,
+        phone: place.phone,
+        services: place.services,
+        latitude: place.latitude,
+        longitude: place.longitude,
+      );
+    }).toList();
+
+    _sortedPlaces.sort((a, b) => a.distance.compareTo(b.distance));
   }
 
   @override
   Widget build(BuildContext context) {
-    String title = widget.serviceType == ServiceType.gasStation
-        ? "Gas Stations"
-        : "Repair Shops";
-
-    List<ServicePlace> filteredPlaces = _places.where((place) {
-      return place.name.toLowerCase().contains(_searchQuery.toLowerCase());
-    }).toList();
-
     return Scaffold(
-      backgroundColor: Colors.white,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
         elevation: 0,
+        title: Text(widget.title, style: const TextStyle(color: Colors.white)),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text(
-          "List of Results",
-          style: GoogleFonts.poppins(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-          ),
-        ),
-        centerTitle: true,
-      ),
-      body: Column(
-        children: [
-          // Search Bar
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
-            ),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(30),
-                border: Border.all(color: Colors.grey[300]!, width: 1.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 15,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
-              ),
-              child: TextField(
-                onChanged: (value) {
-                  setState(() {
-                    _searchQuery = value;
-                  });
-                },
-                style: GoogleFonts.poppins(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black87,
-                ),
-                decoration: InputDecoration(
-                  icon: Icon(Icons.search, color: Colors.blue[700], size: 26),
-                  hintText: "Search $title...",
-                  hintStyle: GoogleFonts.poppins(
-                    color: Colors.grey[500],
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  border: InputBorder.none,
-                ),
-              ),
-            ),
-          ),
-
-          // Filters Row
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildFilterText("Distance"),
-                _buildFilterText("Rating"),
-                _buildFilterText("Service Type"),
-              ],
-            ),
-          ),
-
-          // View Toggle (List, Map, Location)
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey[300]!),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                _buildViewToggleOption(Icons.list, true),
-                _buildViewToggleOption(Icons.map_outlined, false),
-                _buildViewToggleOption(Icons.place, false),
-              ],
-            ),
-          ),
-
-          // List Results
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: filteredPlaces.length,
-              itemBuilder: (context, index) {
-                return _buildPlaceCard(filteredPlaces[index]);
-              },
-            ),
+        actions: [
+          IconButton(
+            icon: Icon(_showMap ? Icons.list : Icons.map, color: Colors.white),
+            onPressed: () {
+              setState(() {
+                _showMap = !_showMap;
+              });
+            },
+            tooltip: _showMap
+                ? AppLocalizations.of(context)!.showList
+                : AppLocalizations.of(context)!.showMap,
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildFilterText(String text) {
-    return Row(
-      children: [
-        Text(
-          text,
-          style: GoogleFonts.poppins(
-            color: Colors.blue[600],
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        Icon(Icons.arrow_drop_down, color: Colors.blue[600]),
-      ],
-    );
-  }
-
-  Widget _buildViewToggleOption(IconData icon, bool isSelected) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? Colors.white
-              : Colors.grey[50], // Simple indicator
-          border: isSelected
-              ? const Border(bottom: BorderSide(color: Colors.blue, width: 2))
-              : null,
-        ),
-        child: Icon(icon, color: isSelected ? Colors.blue : Colors.grey),
-      ),
-    );
-  }
-
-  Widget _buildPlaceCard(ServicePlace place) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ServiceDetailScreen(place: place),
-          ),
-        );
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Image
-            Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  bottomLeft: Radius.circular(16),
-                ),
-              ),
-              child: ClipRRect(
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  bottomLeft: Radius.circular(16),
-                ),
-                child: Image.asset(
-                  place.imageUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Center(
-                      child: Icon(
-                        place.type == ServiceType.gasStation
-                            ? Icons.local_gas_station
-                            : Icons.build,
-                        color: Colors.grey,
-                      ),
-                    );
-                  },
-                ),
+      body: Stack(
+        children: [
+          // Background Image
+          Container(
+            decoration: const BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage('assets/images/background.jpg'),
+                fit: BoxFit.cover,
+                colorFilter: ColorFilter.mode(Colors.black54, BlendMode.darken),
               ),
             ),
+          ),
 
-            // Content
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      place.name,
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.w700, // Bold
-                        fontSize: 16,
-                        color: Colors.black, // Pure black
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.location_on,
-                          size: 14,
-                          color: Color(0xFF1976D2), // Strong Blue
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          "${place.distance} km",
-                          style: GoogleFonts.poppins(
-                            color: Colors.black87, // Darker grey
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600, // SemiBold
+          // Content
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _sortedPlaces.isEmpty
+              ? Center(
+                  child: Text(
+                    AppLocalizations.of(context)!.noPlacesFound,
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                )
+              : _showMap
+              ? MapScreen(places: _sortedPlaces)
+              : SafeArea(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _sortedPlaces.length,
+                    itemBuilder: (context, index) {
+                      final place = _sortedPlaces[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    ServiceDetailScreen(place: place),
+                              ),
+                            );
+                          },
+                          child: GlassContainer(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Image.network(
+                                    place.imageUrl,
+                                    width: 80,
+                                    height: 80,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        width: 80,
+                                        height: 80,
+                                        color: Colors.grey,
+                                        child: const Icon(
+                                          Icons.image_not_supported,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Consumer<FavoritesProvider>(
+                                    builder: (context, favoritesProvider, child) {
+                                      final isFavorite = favoritesProvider
+                                          .isFavorite(place.id);
+                                      return Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  place.name,
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 18,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              IconButton(
+                                                icon: Icon(
+                                                  isFavorite
+                                                      ? Icons.favorite
+                                                      : Icons.favorite_border,
+                                                  color: isFavorite
+                                                      ? Colors.red
+                                                      : Colors.white70,
+                                                  size: 24,
+                                                ),
+                                                padding: EdgeInsets.zero,
+                                                constraints:
+                                                    const BoxConstraints(),
+                                                onPressed: () {
+                                                  favoritesProvider
+                                                      .toggleFavorite(place);
+                                                  ScaffoldMessenger.of(
+                                                    context,
+                                                  ).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        isFavorite
+                                                            ? AppLocalizations.of(
+                                                                context,
+                                                              )!.removedFromFavorites
+                                                            : AppLocalizations.of(
+                                                                context,
+                                                              )!.addedToFavorites,
+                                                      ),
+                                                      duration: const Duration(
+                                                        seconds: 2,
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            place.address,
+                                            style: const TextStyle(
+                                              color: Colors.white70,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.star,
+                                                color: Colors.amber,
+                                                size: 16,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                place.rating.toString(),
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 16),
+                                              const Icon(
+                                                Icons.location_on,
+                                                color: Colors.redAccent,
+                                                size: 16,
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                "${place.distance.toStringAsFixed(1)} km",
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.blue,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.directions,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  onPressed: () {
+                                    _launchMaps(
+                                      place.latitude,
+                                      place.longitude,
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        const Icon(Icons.star, size: 14, color: Colors.amber),
-                        const SizedBox(width: 2),
-                        Text(
-                          "${place.rating}",
-                          style: GoogleFonts.poppins(
-                            color: Colors.black87, // Darker grey
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      place.status,
-                      style: GoogleFonts.poppins(
-                        color: const Color(0xFF2E7D32), // Darker Green
-                        fontWeight: FontWeight.w700, // Bold
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Direction Button
-            Padding(
-              padding: const EdgeInsets.only(top: 35, right: 12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4CAF50), // Standard Green
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 4,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Text(
-                  "Direction",
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
+                      );
+                    },
                   ),
                 ),
-              ),
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }

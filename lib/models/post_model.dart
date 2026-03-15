@@ -12,6 +12,7 @@ class Post {
   int likes;
   List<Comment> comments;
   bool isLiked;
+  int dbCommentsCount;
   String? videoUrl;
   String? imageUrl;
 
@@ -25,10 +26,13 @@ class Post {
     required this.likes,
     required this.comments,
     this.isLiked = false,
+    this.dbCommentsCount = 0,
     this.videoUrl,
     this.imageUrl,
   });
 
-  int get commentsCount =>
-      comments.length + comments.fold(0, (prev, c) => prev + c.replies.length);
+  int get commentsCount => dbCommentsCount > 0
+      ? dbCommentsCount
+      : (comments.length +
+            comments.fold(0, (prev, c) => prev + c.replies.length));
 }

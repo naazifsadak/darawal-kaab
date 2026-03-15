@@ -2,7 +2,7 @@ import 'user_model.dart';
 
 class Comment {
   final String id;
-  final String text;
+  String text;
   final User author;
   final DateTime timestamp;
   final List<Comment> replies;

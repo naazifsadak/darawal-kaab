@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../providers/user_provider.dart';
+import 'package:darawalkaab/l10n/app_localizations.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -96,7 +97,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          "Edit Profile",
+          AppLocalizations.of(context)!.editProfile,
           style: GoogleFonts.poppins(
             color: Colors.black,
             fontSize: 18,
@@ -106,14 +107,28 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         centerTitle: true,
         actions: [
           TextButton(
-            onPressed: () {
-              Provider.of<UserProvider>(context, listen: false).updateUser(
+            onPressed: () async {
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) =>
+                    const Center(child: CircularProgressIndicator()),
+              );
+
+              await Provider.of<UserProvider>(
+                context,
+                listen: false,
+              ).updateUser(
                 name: _nameController.text,
                 bio: _bioController.text,
                 email: _emailController.text,
                 phone: _phoneController.text,
               );
-              Navigator.pop(context);
+
+              if (context.mounted) {
+                Navigator.pop(context); // Close loading dialog
+                Navigator.pop(context); // Close EditProfileScreen
+              }
             },
             child: Text(
               "Save",

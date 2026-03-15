@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:darawalkaab/l10n/app_localizations.dart';
 
 class AboutAppScreen extends StatelessWidget {
   const AboutAppScreen({super.key});
@@ -16,7 +17,7 @@ class AboutAppScreen extends StatelessWidget {
       backgroundColor: backgroundColor,
       appBar: AppBar(
         title: Text(
-          "About App",
+          AppLocalizations.of(context)!.aboutApp,
           style: GoogleFonts.poppins(
             color: textColor,
             fontWeight: FontWeight.w600,
@@ -57,7 +58,7 @@ class AboutAppScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             Text(
-              "Darawal-Kaab",
+              AppLocalizations.of(context)!.appTitle,
               style: GoogleFonts.poppins(
                 fontSize: 24,
                 fontWeight: FontWeight.bold,

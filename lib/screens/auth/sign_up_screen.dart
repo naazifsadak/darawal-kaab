@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../widgets/background_scaffold.dart';
 import '../../widgets/glass_container.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/custom_button.dart';
-import '../main_screen.dart';
 import '../../services/auth_service.dart';
+import 'email_verification_screen.dart';
+import '../main_screen.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -21,6 +23,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _passwordController = TextEditingController();
   final _authService = AuthService();
   bool _isLoading = false;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
@@ -39,25 +42,46 @@ class _SignUpScreenState extends State<SignUpScreen> {
     try {
       final name = _nameController.text.trim();
       final email = _emailController.text.trim();
+      final phone = _phoneController.text.trim();
       final password = _passwordController.text.trim();
 
       if (name.isEmpty || email.isEmpty || password.isEmpty) {
         throw 'Please fill in all required fields';
       }
 
-      final credential = await _authService.signUp(
+      final response = await _authService.signUp(
         email: email,
         password: password,
+        data: {'display_name': name, 'phone': phone},
       );
 
-      if (credential != null && credential.user != null) {
-        await credential.user!.updateDisplayName(name);
-      }
+      // Metadata is sent directly during sign up, so no need for separate update
 
       if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const MainScreen()),
-          (route) => false,
+        if (response.session != null) {
+          // User is automatically logged in (if email confirmations are disabled in Supabase)
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const MainScreen()),
+            (route) => false,
+          );
+        } else {
+          // User needs to verify email
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => EmailVerificationScreen(email: email),
+            ),
+          );
+        }
+      }
+    } on supabase.AuthException catch (e) {
+      if (mounted) {
+        String message = e.message;
+        if (message.toLowerCase().contains('rate limit')) {
+          message =
+              'Email rate limit exceeded. Please wait a bit before trying again, or use a different email.';
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: Colors.red),
         );
       }
     } catch (e) {
@@ -156,10 +180,19 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           controller: _passwordController,
                           hintText: "Password",
                           prefixIcon: Icons.lock_outline,
-                          obscureText: true,
-                          suffixIcon: const Icon(
-                            Icons.visibility_off_outlined,
-                            color: Colors.white70,
+                          obscureText: _obscurePassword,
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscurePassword
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined,
+                              color: Colors.white70,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _obscurePassword = !_obscurePassword;
+                              });
+                            },
                           ),
                         )
                         .animate()
