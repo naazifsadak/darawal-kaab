@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 class User {
   final String id;
@@ -10,7 +11,9 @@ class User {
   int following;
   int postsCount;
   bool isFollowing;
-  bool hideFollowersFollowing;
+
+  final bool isAdmin;
+  final String status;
 
   User({
     required this.id,
@@ -21,16 +24,17 @@ class User {
     required this.following,
     required this.postsCount,
     this.isFollowing = false,
-    this.hideFollowersFollowing = false,
+    this.isAdmin = false,
+    this.status = 'active',
   });
 
   ImageProvider get imageProvider {
     if (profileImage.startsWith('http')) {
       return NetworkImage(profileImage);
-    } else if (File(profileImage).existsSync()) {
+    } else if (profileImage.isNotEmpty && !kIsWeb && File(profileImage).existsSync()) {
       return FileImage(File(profileImage));
     } else {
-      return AssetImage(profileImage);
+      return AssetImage(profileImage.isNotEmpty ? profileImage : 'assets/images/placeholder.png');
     }
   }
 }

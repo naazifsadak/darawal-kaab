@@ -87,9 +87,6 @@ class AppLocalizationsAr extends AppLocalizations {
   String get notifications => 'الإشعارات';
 
   @override
-  String get hideFollowersFollowing => 'إخفاء المتابعين والمُتابَعين';
-
-  @override
   String get darkMode => 'الوضع الداكن';
 
   @override
@@ -214,4 +211,61 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get deletePost => 'Delete Post';
+
+  @override
+  String get recentRoadConditions => 'حالة الطرق الأخيرة';
+
+  @override
+  String get viewAll => 'عرض الكل';
+
+  @override
+  String get termsOfService => 'شروط الخدمة';
+
+  @override
+  String get deleteAccount => 'حذف الحساب';
+
+  @override
+  String get deleteAccountTitle => 'حذف الحساب؟';
+
+  @override
+  String get deleteAccountConfirm =>
+      'هل أنت متأكد من أنك تريد حذف حسابك؟ هذا الإجراء نهائي ولا يمكن التراجع عنه.';
+
+  @override
+  String get reportPost => 'الإبلاغ عن المنشور';
+
+  @override
+  String get reportComment => 'الإبلاغ عن التعليق';
+
+  @override
+  String get blockUser => 'حظر المستخدم';
+
+  @override
+  String get reportReasonSpam => 'محتوى غير مرغوب فيه أو مضلل';
+
+  @override
+  String get reportReasonHarassment => 'مضايقة أو خطاب كراهية';
+
+  @override
+  String get reportReasonInappropriate => 'محتوى غير لائق أو مسيء';
+
+  @override
+  String get reportReasonOther => 'سبب آخر';
+
+  @override
+  String get reportSubmitted =>
+      'تم تقديم البلاغ. شكراً لك على المساعدة في الحفاظ على أمان مجتمعنا.';
+
+  @override
+  String get userBlocked => 'تم حظر المستخدم. لن ترى محتواهم بعد الآن.';
+
+  @override
+  String get confirmBlockUser =>
+      'هل أنت متأكد من أنك تريد حظر هذا المستخدم؟ لن ترى منشوراتهم أو تعليقاتهم بعد الآن.';
+
+  @override
+  String get block => 'حظر';
+
+  @override
+  String get report => 'إبلاغ';
 }

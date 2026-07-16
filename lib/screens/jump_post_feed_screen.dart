@@ -14,6 +14,7 @@ import 'notifications_screen.dart';
 import 'package:gal/gal.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../widgets/full_screen_image.dart';
 import '../widgets/post_video_player.dart';
 import 'package:darawalkaab/l10n/app_localizations.dart';
@@ -93,6 +94,103 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
     }
   }
 
+  Future<void> _showBlockUserDialog(String userId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(AppLocalizations.of(context)!.blockUser),
+        content: Text(AppLocalizations.of(context)!.confirmBlockUser),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(AppLocalizations.of(context)!.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text(AppLocalizations.of(context)!.block),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      try {
+        await Provider.of<SocialProvider>(context, listen: false).blockUser(userId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.userBlocked),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Failed to block user: $e"),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _showReportPostDialog(String postId) async {
+    final reasons = [
+      AppLocalizations.of(context)!.reportReasonSpam,
+      AppLocalizations.of(context)!.reportReasonHarassment,
+      AppLocalizations.of(context)!.reportReasonInappropriate,
+      AppLocalizations.of(context)!.reportReasonOther,
+    ];
+
+    String? selectedReason = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text(AppLocalizations.of(context)!.reportPost),
+        children: reasons
+            .map(
+              (reason) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, reason),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Text(reason),
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+
+    if (selectedReason != null && mounted) {
+      try {
+        await Provider.of<SocialProvider>(context, listen: false).reportPost(
+          postId: postId,
+          reason: selectedReason,
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.reportSubmitted),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Failed to submit report: $e"),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   Future<void> _showEditCommentDialog(
     BuildContext context,
     Post post,
@@ -161,439 +259,529 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
   }
 
   void _showComments(BuildContext context, Post post) {
+    // Cache the future so it doesn't re-trigger when setModalState is called
+    final commentsFuture = Provider.of<SocialProvider>(context, listen: false).fetchCommentsForPost(post.id);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      backgroundColor: Colors.transparent, // For better rounding
       builder: (context) {
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setModalState) {
-            return DraggableScrollableSheet(
-              initialChildSize: 0.6,
-              minChildSize: 0.4,
-              maxChildSize: 0.9,
-              expand: false,
-              builder: (context, scrollController) {
-                return FutureBuilder<List<Comment>>(
-                  future: Provider.of<SocialProvider>(
-                    context,
-                    listen: false,
-                  ).fetchCommentsForPost(post.id),
-                  builder: (context, snapshot) {
-                    return Container(
-                      padding: EdgeInsets.only(
-                        left: 16,
-                        right: 16,
-                        top: 16,
-                        bottom: MediaQuery.of(context).viewInsets.bottom,
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            final bgColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
+            final textColor = isDark ? Colors.white : Colors.black87;
+            final subtitleColor = isDark ? Colors.grey[400]! : Colors.grey[600]!;
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.85,
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 12),
+                    Center(
+                      child: Container(
+                        width: 48,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.grey[700] : Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2.5),
+                        ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Center(
-                            child: Container(
-                              width: 40,
-                              height: 5,
-                              decoration: BoxDecoration(
-                                color: Colors.grey[300],
-                                borderRadius: BorderRadius.circular(2.5),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            "${AppLocalizations.of(context)!.comments} (${post.commentsCount})",
+                    ),
+                    const SizedBox(height: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Consumer<SocialProvider>(
+                        builder: (context, socialProvider, child) {
+                          final currentPost = socialProvider.posts.firstWhere((p) => p.id == post.id, orElse: () => post);
+                          return Text(
+                            "${AppLocalizations.of(context)!.comments} (${currentPost.dbCommentsCount})",
                             style: GoogleFonts.poppins(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
+                              color: textColor,
                             ),
-                          ),
-                          const SizedBox(height: 16),
-                          Expanded(
-                            child:
-                                snapshot.connectionState ==
-                                    ConnectionState.waiting
-                                ? const Center(
-                                    child: CircularProgressIndicator(),
-                                  )
-                                : (snapshot.data == null ||
-                                      snapshot.data!.isEmpty)
-                                ? Center(
-                                    child: Text(
-                                      AppLocalizations.of(
-                                        context,
-                                      )!.noCommentsYet,
-                                      style: GoogleFonts.poppins(
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  )
-                                : ListView.builder(
-                                    controller: scrollController,
-                                    itemCount: snapshot.data!.length,
-                                    itemBuilder: (context, index) {
-                                      final comment = snapshot.data![index];
-                                      return Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: 16,
-                                        ),
-                                        child: Column(
-                                          // Main Column for comment + replies
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                GestureDetector(
-                                                  onTap: () =>
-                                                      _navigateToUserProfile(
-                                                        comment.author,
-                                                      ),
-                                                  child: CircleAvatar(
-                                                    backgroundImage: comment
-                                                        .author
-                                                        .imageProvider,
-                                                    radius: 18,
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 12),
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      Text(
-                                                        comment.author.name,
-                                                        style:
-                                                            GoogleFonts.poppins(
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w600,
-                                                              fontSize: 14,
-                                                            ),
-                                                      ),
-                                                      const SizedBox(height: 4),
-                                                      Text(
-                                                        comment.text,
-                                                        style:
-                                                            GoogleFonts.poppins(
-                                                              fontSize: 14,
-                                                            ),
-                                                      ),
-                                                      const SizedBox(height: 4),
-                                                      Row(
-                                                        children: [
-                                                          Text(
-                                                            "${comment.timestamp.hour}:${comment.timestamp.minute.toString().padLeft(2, '0')}",
-                                                            style:
-                                                                GoogleFonts.poppins(
-                                                                  fontSize: 12,
-                                                                  color: Colors
-                                                                      .grey,
-                                                                ),
-                                                          ),
-                                                          const SizedBox(
-                                                            width: 16,
-                                                          ),
-                                                          GestureDetector(
-                                                            onTap: () {
-                                                              setModalState(() {
-                                                                _replyingToCommentId =
-                                                                    comment.id;
-                                                                _replyingToUserName =
-                                                                    comment
-                                                                        .author
-                                                                        .name;
-                                                              });
-                                                              FocusScope.of(
-                                                                context,
-                                                              ).requestFocus(
-                                                                _commentFocusNode,
-                                                              );
-                                                            },
-                                                            child: Text(
-                                                              AppLocalizations.of(
-                                                                context,
-                                                              )!.reply,
-                                                              style: GoogleFonts.poppins(
-                                                                fontSize: 12,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w600,
-                                                                color: Colors
-                                                                    .grey[600],
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                                if (comment.author.id ==
-                                                    Provider.of<UserProvider>(
-                                                      context,
-                                                      listen: false,
-                                                    ).user.id)
-                                                  PopupMenuButton<String>(
-                                                    icon: const Icon(
-                                                      Icons.more_vert,
-                                                      size: 16,
-                                                      color: Colors.grey,
-                                                    ),
-                                                    onSelected: (value) async {
-                                                      if (value == 'edit') {
-                                                        _showEditCommentDialog(
-                                                          context,
-                                                          post,
-                                                          comment,
-                                                        );
-                                                      } else if (value ==
-                                                          'delete') {
-                                                        try {
-                                                          await Provider.of<
-                                                                SocialProvider
-                                                              >(
-                                                                context,
-                                                                listen: false,
-                                                              )
-                                                              .deleteComment(
-                                                                post.id,
-                                                                comment.id,
-                                                              );
-                                                          // Tell the modal to rebuild to fetch updated list
-                                                          setModalState(() {});
-                                                        } catch (e) {
-                                                          debugPrint(
-                                                            "Error deleting comment: $e",
-                                                          );
-                                                        }
-                                                      }
-                                                    },
-                                                    itemBuilder: (context) => [
-                                                      PopupMenuItem(
-                                                        value: 'edit',
-                                                        child: Text(
-                                                          AppLocalizations.of(
-                                                            context,
-                                                          )!.edit,
-                                                        ),
-                                                      ),
-                                                      PopupMenuItem(
-                                                        value: 'delete',
-                                                        child: Text(
-                                                          AppLocalizations.of(
-                                                            context,
-                                                          )!.delete,
-                                                          style:
-                                                              const TextStyle(
-                                                                color:
-                                                                    Colors.red,
-                                                              ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                              ],
-                                            ),
-                                            // Display Replies
-                                            if (comment.replies.isNotEmpty)
-                                              Padding(
-                                                padding: const EdgeInsets.only(
-                                                  top: 12,
-                                                  left: 48, // Indent replies
-                                                ),
-                                                child: Column(
-                                                  children: comment.replies
-                                                      .map(
-                                                        (reply) => Padding(
-                                                          padding:
-                                                              const EdgeInsets.only(
-                                                                bottom: 12,
-                                                              ),
-                                                          child: Row(
-                                                            crossAxisAlignment:
-                                                                CrossAxisAlignment
-                                                                    .start,
-                                                            children: [
-                                                              GestureDetector(
-                                                                onTap: () =>
-                                                                    _navigateToUserProfile(
-                                                                      reply
-                                                                          .author,
-                                                                    ),
-                                                                child: CircleAvatar(
-                                                                  backgroundImage:
-                                                                      reply
-                                                                          .author
-                                                                          .imageProvider,
-                                                                  radius:
-                                                                      14, // Smaller avatar for replies
-                                                                ),
-                                                              ), // Added closing parenthesis for GestureDetector and comma
-                                                              const SizedBox(
-                                                                width: 8,
-                                                              ),
-                                                              Expanded(
-                                                                child: Column(
-                                                                  crossAxisAlignment:
-                                                                      CrossAxisAlignment
-                                                                          .start,
-                                                                  children: [
-                                                                    Text(
-                                                                      reply
-                                                                          .author
-                                                                          .name,
-                                                                      style: GoogleFonts.poppins(
-                                                                        fontWeight:
-                                                                            FontWeight.w600,
-                                                                        fontSize:
-                                                                            13,
-                                                                      ),
-                                                                    ),
-                                                                    Text(
-                                                                      reply
-                                                                          .text,
-                                                                      style: GoogleFonts.poppins(
-                                                                        fontSize:
-                                                                            13,
-                                                                      ),
-                                                                    ),
-                                                                  ],
-                                                                ),
-                                                              ),
-                                                            ],
-                                                          ),
-                                                        ),
-                                                      )
-                                                      .toList(),
-                                                ),
-                                              ),
-                                          ],
-                                        ),
-                                      );
-                                    },
-                                  ),
-                          ),
-                          const Divider(),
-                          if (_replyingToCommentId != null)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              color: Colors.grey[200],
-                              child: Row(
-                                children: [
-                                  Text(
-                                    "${AppLocalizations.of(context)!.replyingTo}$_replyingToUserName",
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 12,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  IconButton(
-                                    icon: const Icon(Icons.close, size: 16),
-                                    onPressed: () {
-                                      setModalState(() {
-                                        _replyingToCommentId = null;
-                                        _replyingToUserName = null;
-                                      });
-                                    },
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 16, top: 8),
-                            child: TextField(
-                              controller: _commentController,
-                              focusNode: _commentFocusNode,
-                              decoration: InputDecoration(
-                                hintText: _replyingToCommentId != null
-                                    ? "${AppLocalizations.of(context)!.replyingTo}$_replyingToUserName..."
-                                    : AppLocalizations.of(
-                                        context,
-                                      )!.addCommentHint,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(30),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 8,
-                                ),
-                                suffixIcon: IconButton(
-                                  icon: const Icon(
-                                    Icons.send,
-                                    color: Colors.blue,
-                                  ),
-                                  onPressed: () {
-                                    if (_commentController.text
-                                        .trim()
-                                        .isEmpty) {
-                                      return;
-                                    }
-
-                                    final text = _commentController.text.trim();
-                                    final currentUser =
-                                        Provider.of<UserProvider>(
-                                          context,
-                                          listen: false,
-                                        ).user;
-                                    if (_replyingToCommentId != null) {
-                                      Provider.of<SocialProvider>(
-                                        context,
-                                        listen: false,
-                                      ).replyToComment(
-                                        post.id,
-                                        _replyingToCommentId!,
-                                        text,
-                                        currentUser,
-                                      );
-                                    } else {
-                                      Provider.of<SocialProvider>(
-                                        context,
-                                        listen: false,
-                                      ).addComment(post.id, text, currentUser);
-                                    }
-
-                                    _commentController.clear();
-                                    setModalState(() {
-                                      _replyingToCommentId = null;
-                                      _replyingToUserName = null;
-                                    });
-                                    // Close keyboard logic if needed, or keep open
-                                  },
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
+                          );
+                        },
                       ),
-                    );
-                  },
-                );
-              },
+                    ),
+                    const SizedBox(height: 12),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: FutureBuilder<List<Comment>>(
+                        future: commentsFuture,
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
+                          
+                          return Consumer<SocialProvider>(
+                            builder: (context, socialProvider, child) {
+                              final currentPost = socialProvider.posts.firstWhere((p) => p.id == post.id, orElse: () => post);
+                              final comments = currentPost.comments;
+                              
+                              if (comments.isEmpty) {
+                                return Center(
+                                  child: Text(
+                                    AppLocalizations.of(context)!.noCommentsYet,
+                                    style: GoogleFonts.poppins(color: subtitleColor),
+                                  ),
+                                );
+                              }
+                              
+                              return ListView.builder(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                itemCount: comments.length,
+                                itemBuilder: (context, index) {
+                                  final comment = comments[index];
+                                  return _buildCommentThread(context, currentPost, comment, setModalState, isDark, textColor, subtitleColor);
+                                },
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    _buildCommentInputField(context, post, setModalState, isDark),
+                  ],
+                ),
+              ),
             );
           },
         );
       },
     ).whenComplete(() {
       setState(() {
-        // Clear reply state when bottom sheet closes
         _replyingToCommentId = null;
         _replyingToUserName = null;
-        _commentController.clear(); // Optional: clear text
+        _commentController.clear();
       });
     });
+  }
+
+  Widget _buildCommentThread(
+      BuildContext context, Post post, Comment comment, StateSetter setModalState,
+      bool isDark, Color textColor, Color subtitleColor) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Main Comment
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              GestureDetector(
+                onTap: () => _navigateToUserProfile(comment.author),
+                child: CircleAvatar(
+                  backgroundImage: comment.author.imageProvider,
+                  radius: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          comment.author.name,
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: textColor,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _formatShortTime(comment.timestamp),
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: subtitleColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      comment.text,
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: textColor,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        // Reply Button
+                        GestureDetector(
+                          onTap: () {
+                            setModalState(() {
+                              _replyingToCommentId = comment.id;
+                              _replyingToUserName = comment.author.name;
+                            });
+                            FocusScope.of(context).requestFocus(_commentFocusNode);
+                          },
+                          child: Text(
+                            AppLocalizations.of(context)!.reply,
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: subtitleColor,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 24),
+                        // Like Button
+                        GestureDetector(
+                          onTap: () {
+                            Provider.of<SocialProvider>(context, listen: false).toggleCommentLike(post.id, comment.id);
+                            setModalState(() {}); // rebuild to show new like count/status locally
+                          },
+                          child: Row(
+                            children: [
+                              Icon(
+                                comment.isLiked ? Icons.favorite : Icons.favorite_border,
+                                size: 16,
+                                color: comment.isLiked ? Colors.red : subtitleColor,
+                              ),
+                              if (comment.likes > 0) ...[
+                                const SizedBox(width: 4),
+                                Text(
+                                  comment.likes.toString(),
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    color: comment.isLiked ? Colors.red : subtitleColor,
+                                  ),
+                                ),
+                              ]
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // More options
+              if (comment.author.id == Provider.of<UserProvider>(context, listen: false).user.id)
+                PopupMenuButton<String>(
+                  icon: Icon(Icons.more_horiz, size: 20, color: subtitleColor),
+                  onSelected: (value) async {
+                    if (value == 'edit') {
+                      _showEditCommentDialog(context, post, comment);
+                    } else if (value == 'delete') {
+                      await Provider.of<SocialProvider>(context, listen: false).deleteComment(post.id, comment.id);
+                      setModalState(() {});
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(value: 'edit', child: Text(AppLocalizations.of(context)!.edit)),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text(AppLocalizations.of(context)!.delete, style: const TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+          
+          // Replies Section
+          if (comment.replies.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 20),
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(
+                      color: isDark ? Colors.grey[800]! : Colors.grey[300]!,
+                      width: 2,
+                    ),
+                  ),
+                ),
+                padding: const EdgeInsets.only(left: 16, top: 4, bottom: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (!comment.isRepliesExpanded)
+                            GestureDetector(
+                              onTap: () {
+                                setModalState(() {
+                                  comment.isRepliesExpanded = true;
+                                });
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                child: Text(
+                                  "View ${comment.replies.length} replies",
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.blue,
+                                  ),
+                                ),
+                              ),
+                            )
+                          else
+                            ...comment.replies.map((reply) => Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  GestureDetector(
+                                    onTap: () => _navigateToUserProfile(reply.author),
+                                    child: CircleAvatar(
+                                      backgroundImage: reply.author.imageProvider,
+                                      radius: 16,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Text(
+                                              reply.author.name,
+                                              style: GoogleFonts.poppins(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 13,
+                                                color: textColor,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              _formatShortTime(reply.timestamp),
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 12,
+                                                color: subtitleColor,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          reply.text,
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 13,
+                                            color: textColor,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Row(
+                                          children: [
+                                            GestureDetector(
+                                              onTap: () {
+                                                setModalState(() {
+                                                  _replyingToCommentId = comment.id; // Still reply to main thread
+                                                  _replyingToUserName = reply.author.name;
+                                                });
+                                                FocusScope.of(context).requestFocus(_commentFocusNode);
+                                              },
+                                              child: Text(
+                                                AppLocalizations.of(context)!.reply,
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: subtitleColor,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 20),
+                                            GestureDetector(
+                                              onTap: () {
+                                                Provider.of<SocialProvider>(context, listen: false).toggleCommentLike(post.id, reply.id);
+                                                setModalState(() {});
+                                              },
+                                              child: Row(
+                                                children: [
+                                                  Icon(
+                                                    reply.isLiked ? Icons.favorite : Icons.favorite_border,
+                                                    size: 14,
+                                                    color: reply.isLiked ? Colors.red : subtitleColor,
+                                                  ),
+                                                  if (reply.likes > 0) ...[
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      reply.likes.toString(),
+                                                      style: GoogleFonts.poppins(
+                                                        fontSize: 12,
+                                                        color: reply.isLiked ? Colors.red : subtitleColor,
+                                                      ),
+                                                    ),
+                                                  ]
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (reply.author.id == Provider.of<UserProvider>(context, listen: false).user.id)
+                                    PopupMenuButton<String>(
+                                      icon: Icon(Icons.more_horiz, size: 16, color: subtitleColor),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      onSelected: (value) async {
+                                        if (value == 'edit') {
+                                          _showEditCommentDialog(context, post, reply);
+                                        } else if (value == 'delete') {
+                                          await Provider.of<SocialProvider>(context, listen: false).deleteComment(post.id, reply.id);
+                                          setModalState(() {});
+                                        }
+                                      },
+                                      itemBuilder: (context) => [
+                                        PopupMenuItem(value: 'edit', child: Text(AppLocalizations.of(context)!.edit)),
+                                        PopupMenuItem(
+                                          value: 'delete',
+                                          child: Text(AppLocalizations.of(context)!.delete, style: const TextStyle(color: Colors.red)),
+                                        ),
+                                      ],
+                                    ),
+                                ],
+                              ),
+                            )),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommentInputField(BuildContext context, Post post, StateSetter setModalState, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_replyingToCommentId != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.grey[800] : Colors.grey[200],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    "${AppLocalizations.of(context)!.replyingTo} $_replyingToUserName",
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: isDark ? Colors.grey[300] : Colors.grey[700],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () {
+                      setModalState(() {
+                        _replyingToCommentId = null;
+                        _replyingToUserName = null;
+                      });
+                    },
+                    child: const Icon(Icons.close, size: 14),
+                  ),
+                ],
+              ),
+            ),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _commentController,
+                  focusNode: _commentFocusNode,
+                  maxLines: null,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _submitComment(post, setModalState),
+                  decoration: InputDecoration(
+                    hintText: _replyingToCommentId != null
+                        ? "${AppLocalizations.of(context)!.replyingTo} $_replyingToUserName..."
+                        : AppLocalizations.of(context)!.addCommentHint,
+                    hintStyle: GoogleFonts.poppins(fontSize: 14),
+                    filled: true,
+                    fillColor: isDark ? Colors.grey[900] : Colors.grey[100],
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () => _submitComment(post, setModalState),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: const BoxDecoration(
+                    color: Colors.blue,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.arrow_upward, color: Colors.white, size: 20),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _submitComment(Post post, StateSetter setModalState) {
+    if (_commentController.text.trim().isEmpty) return;
+    
+    final text = _commentController.text.trim();
+    final currentUser = Provider.of<UserProvider>(context, listen: false).user;
+    
+    if (_replyingToCommentId != null) {
+      Provider.of<SocialProvider>(context, listen: false).replyToComment(
+        post.id, _replyingToCommentId!, text, currentUser
+      );
+    } else {
+      Provider.of<SocialProvider>(context, listen: false).addComment(post.id, text, currentUser);
+    }
+
+    _commentController.clear();
+    setModalState(() {
+      _replyingToCommentId = null;
+      _replyingToUserName = null;
+    });
+  }
+
+  String _formatShortTime(DateTime time) {
+    final difference = DateTime.now().difference(time);
+    if (difference.inDays >= 7) {
+      return "${difference.inDays ~/ 7}w";
+    } else if (difference.inDays >= 1) {
+      return "${difference.inDays}d";
+    } else if (difference.inHours >= 1) {
+      return "${difference.inHours}h";
+    } else if (difference.inMinutes >= 1) {
+      return "${difference.inMinutes}m";
+    } else {
+      return "now";
+    }
   }
 
   Future<void> _downloadMedia(String url, bool isVideo) async {
@@ -939,31 +1127,35 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                GestureDetector(
-                  onTap: () => _navigateToUserProfile(post.author),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        AppLocalizations.of(context)!.postedBy,
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          color: Colors.grey[700], // Darker grey
-                          fontWeight: FontWeight.w500,
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _navigateToUserProfile(post.author),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          AppLocalizations.of(context)!.postedBy,
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: Colors.grey[700], // Darker grey
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                      ),
-                      Text(
-                        post.author.name,
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: textColor, // Pure black or white
+                        Text(
+                          post.author.name,
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: textColor, // Pure black or white
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 Text(
                   post.timeAgo,
                   style: GoogleFonts.poppins(
@@ -972,25 +1164,48 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                if (post.author.id ==
-                    Provider.of<UserProvider>(context, listen: false).user.id)
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert, color: Colors.grey),
-                    onSelected: (value) {
-                      if (value == 'delete') {
-                        _confirmDeletePost(post.id);
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: Text(
-                          AppLocalizations.of(context)!.deletePost,
-                          style: const TextStyle(color: Colors.red),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: Colors.grey),
+                  onSelected: (value) {
+                    if (value == 'delete') {
+                      _confirmDeletePost(post.id);
+                    } else if (value == 'report') {
+                      _showReportPostDialog(post.id);
+                    } else if (value == 'block') {
+                      _showBlockUserDialog(post.author.id);
+                    }
+                  },
+                  itemBuilder: (context) {
+                    final currentUserId = Provider.of<UserProvider>(context, listen: false).user.id;
+                    if (post.author.id == currentUserId) {
+                      return [
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: Text(
+                            AppLocalizations.of(context)!.deletePost,
+                            style: const TextStyle(color: Colors.red),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ];
+                    } else {
+                      return [
+                        PopupMenuItem(
+                          value: 'report',
+                          child: Text(
+                            AppLocalizations.of(context)!.reportPost,
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'block',
+                          child: Text(
+                            AppLocalizations.of(context)!.blockUser,
+                            style: const TextStyle(color: Colors.red),
+                          ),
+                        ),
+                      ];
+                    }
+                  },
+                ),
               ],
             ),
           ),
@@ -1012,8 +1227,17 @@ class _JumpPostFeedScreenState extends State<JumpPostFeedScreen> {
                   context,
                   icon: Icons.share_outlined,
                   label: AppLocalizations.of(context)!.share,
-                  onTap: () {
-                    // Implement Share
+                  onTap: () async {
+                    // Give instant visual feedback
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text("Opening share menu..."),
+                        duration: const Duration(seconds: 1),
+                      ),
+                    );
+                    
+                    final String shareText = "Check out this post on Darawalkaab!\n\nhttps://darawalkaab.app/post/${post.id}";
+                    await SharePlus.instance.share(ShareParams(text: shareText));
                   },
                 ),
                 if (post.videoUrl != null || post.imageUrl != null)

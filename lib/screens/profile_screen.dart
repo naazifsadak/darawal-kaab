@@ -8,10 +8,12 @@ import 'edit_profile_screen.dart';
 import 'settings/help_center_screen.dart';
 import 'settings/settings_screen.dart';
 import 'welcome_screen.dart';
+import 'admin/admin_dashboard_screen.dart';
 import '../../models/post_model.dart';
-import '../../models/user_model.dart';
 import '../../providers/social_provider.dart';
 import 'post_detail_screen.dart'; // Added this import
+import 'follow_list_screen.dart';
+import '../widgets/full_screen_image.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -21,26 +23,21 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  late Future<User?> _userProfileFuture;
-
   @override
   void initState() {
     super.initState();
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    _userProfileFuture = Provider.of<SocialProvider>(
-      context,
-      listen: false,
-    ).fetchUserProfile(userProvider.user.id);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Provider.of<UserProvider>(context, listen: false).refreshProfile();
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Consumer<UserProvider>(
       builder: (context, userProvider, _) {
-        return FutureBuilder<User?>(
-          future: _userProfileFuture,
-          builder: (context, snapshot) {
-            final displayUser = snapshot.data ?? userProvider.user;
+        final displayUser = userProvider.user;
             final isDark = Theme.of(context).brightness == Brightness.dark;
             final bgColor = isDark ? const Color(0xFF1a1a1a) : Colors.white;
             final cardColor = isDark ? const Color(0xFF2C2C2C) : Colors.white;
@@ -96,6 +93,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               builder: (context) => const SettingsScreen(),
                             ),
                           );
+                        } else if (value == 'admin') {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const AdminDashboardScreen(),
+                            ),
+                          );
                         } else if (value == 'logout') {
                           _showLogoutDialog(context);
                         } else if (value == 'help') {
@@ -129,6 +133,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ],
                             ),
                           ),
+                          if (userProvider.isAdmin)
+                            PopupMenuItem(
+                              value: 'admin',
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.admin_panel_settings_outlined,
+                                    color: Colors.blue[700],
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    "Admin Portal",
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.blue[700],
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           PopupMenuItem(
                             value: 'settings',
                             child: Row(
@@ -202,18 +227,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 20),
                     // Avatar
                     Center(
-                      child: GestureDetector(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const EditProfileScreen(),
-                            ),
-                          );
-                        },
-                        child: Stack(
-                          children: [
-                            Container(
+                      child: Stack(
+                        children: [
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => FullScreenImage(
+                                    imageProvider: displayUser.imageProvider,
+                                  ),
+                                ),
+                              );
+                            },
+                            child: Container(
                               padding: const EdgeInsets.all(2), // Border width
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
@@ -228,9 +255,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 backgroundImage: displayUser.imageProvider,
                               ),
                             ),
-                            Positioned(
-                              bottom: 0,
-                              right: 0,
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => const EditProfileScreen(),
+                                  ),
+                                );
+                              },
                               child: Container(
                                 padding: const EdgeInsets.all(6),
                                 decoration: const BoxDecoration(
@@ -244,8 +281,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ),
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -287,16 +324,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           displayUser.postsCount.toString(),
                           AppLocalizations.of(context)!.posts,
                           textColor,
+                          null, // Posts list not implemented
                         ),
                         _buildStatItem(
                           displayUser.followers.toString(),
                           AppLocalizations.of(context)!.followers,
                           textColor,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => FollowListScreen(
+                                  title: "Followers",
+                                  userId: displayUser.id,
+                                  isFollowers: true,
+                                ),
+                              ),
+                            ).then((_) {
+                              if (context.mounted) {
+                                Provider.of<UserProvider>(context, listen: false).refreshProfile();
+                              }
+                            });
+                          },
                         ),
                         _buildStatItem(
                           displayUser.following.toString(),
                           AppLocalizations.of(context)!.following,
                           textColor,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => FollowListScreen(
+                                  title: "Following",
+                                  userId: displayUser.id,
+                                  isFollowers: false,
+                                ),
+                              ),
+                            ).then((_) {
+                              if (context.mounted) {
+                                Provider.of<UserProvider>(context, listen: false).refreshProfile();
+                              }
+                            });
+                          },
                         ),
                       ],
                     ),
@@ -330,6 +400,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           );
                         }
                         final posts = snapshot.data ?? [];
+                        
+                        // Automatically sync the exact post count with the provider
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (context.mounted) {
+                            Provider.of<UserProvider>(context, listen: false)
+                                .syncPostsCount(posts.length);
+                          }
+                        });
+
                         if (posts.isEmpty) {
                           return Padding(
                             padding: const EdgeInsets.all(20.0),
@@ -390,29 +469,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
             );
-          },
-        );
       },
     );
   }
 
-  Widget _buildStatItem(String count, String label, Color textColor) {
-    return Column(
-      children: [
-        Text(
-          count,
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: textColor,
-          ),
+  Widget _buildStatItem(String count, String label, Color textColor, [VoidCallback? onTap]) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+        child: Column(
+          children: [
+            Text(
+              count,
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: textColor,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500]),
+            ),
+          ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500]),
-        ),
-      ],
+      ),
     );
   }
 

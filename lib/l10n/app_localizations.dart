@@ -103,7 +103,7 @@ abstract class AppLocalizations {
   /// No description provided for @appTitle.
   ///
   /// In en, this message translates to:
-  /// **'Darawal-Kaab'**
+  /// **'Tusiye App'**
   String get appTitle;
 
   /// No description provided for @home.
@@ -256,12 +256,6 @@ abstract class AppLocalizations {
   /// **'Notifications'**
   String get notifications;
 
-  /// No description provided for @hideFollowersFollowing.
-  ///
-  /// In en, this message translates to:
-  /// **'Hide Followers & Following'**
-  String get hideFollowersFollowing;
-
   /// No description provided for @darkMode.
   ///
   /// In en, this message translates to:
@@ -289,7 +283,7 @@ abstract class AppLocalizations {
   /// No description provided for @welcomeTitle.
   ///
   /// In en, this message translates to:
-  /// **'Drive Smarter with\nDarawal-Kaab'**
+  /// **'Drive Smarter with\nTusiye App'**
   String get welcomeTitle;
 
   /// No description provided for @welcomeSubtitle.
@@ -507,6 +501,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Delete Post'**
   String get deletePost;
+
+  /// No description provided for @recentRoadConditions.
+  ///
+  /// In en, this message translates to:
+  /// **'Recent Road Conditions'**
+  String get recentRoadConditions;
+
+  /// No description provided for @viewAll.
+  ///
+  /// In en, this message translates to:
+  /// **'View All'**
+  String get viewAll;
+
+  /// No description provided for @termsOfService.
+  ///
+  /// In en, this message translates to:
+  /// **'Terms of Service'**
+  String get termsOfService;
+
+  /// No description provided for @deleteAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Account'**
+  String get deleteAccount;
+
+  /// No description provided for @deleteAccountTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete Account?'**
+  String get deleteAccountTitle;
+
+  /// No description provided for @deleteAccountConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Are you sure you want to delete your account? This action is permanent and cannot be undone.'**
+  String get deleteAccountConfirm;
+
+  /// No description provided for @reportPost.
+  ///
+  /// In en, this message translates to:
+  /// **'Report Post'**
+  String get reportPost;
+
+  /// No description provided for @reportComment.
+  ///
+  /// In en, this message translates to:
+  /// **'Report Comment'**
+  String get reportComment;
+
+  /// No description provided for @blockUser.
+  ///
+  /// In en, this message translates to:
+  /// **'Block User'**
+  String get blockUser;
+
+  /// No description provided for @reportReasonSpam.
+  ///
+  /// In en, this message translates to:
+  /// **'Spam or misleading'**
+  String get reportReasonSpam;
+
+  /// No description provided for @reportReasonHarassment.
+  ///
+  /// In en, this message translates to:
+  /// **'Harassment or hate speech'**
+  String get reportReasonHarassment;
+
+  /// No description provided for @reportReasonInappropriate.
+  ///
+  /// In en, this message translates to:
+  /// **'Inappropriate or offensive content'**
+  String get reportReasonInappropriate;
+
+  /// No description provided for @reportReasonOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Other reason'**
+  String get reportReasonOther;
+
+  /// No description provided for @reportSubmitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Report submitted. Thank you for keeping our community safe.'**
+  String get reportSubmitted;
+
+  /// No description provided for @userBlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'User blocked. You will no longer see their content.'**
+  String get userBlocked;
+
+  /// No description provided for @confirmBlockUser.
+  ///
+  /// In en, this message translates to:
+  /// **'Are you sure you want to block this user? You will no longer see their posts or comments.'**
+  String get confirmBlockUser;
+
+  /// No description provided for @block.
+  ///
+  /// In en, this message translates to:
+  /// **'Block'**
+  String get block;
+
+  /// No description provided for @report.
+  ///
+  /// In en, this message translates to:
+  /// **'Report'**
+  String get report;
 }
 
 class _AppLocalizationsDelegate

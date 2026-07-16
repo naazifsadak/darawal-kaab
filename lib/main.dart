@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
 import 'screens/welcome_screen.dart';
 import 'screens/main_screen.dart';
+import 'screens/suspended_screen.dart';
+import 'screens/auth/reset_password_screen.dart';
 import 'providers/settings_provider.dart';
 import 'providers/user_provider.dart';
 import 'providers/social_provider.dart';
@@ -10,9 +12,12 @@ import 'providers/favorites_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:darawalkaab/l10n/app_localizations.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService().init();
+  await NotificationService().requestPermissions();
   await Supabase.initialize(
     url: 'https://lroliomhhjkjjczrtmph.supabase.co',
     anonKey: 'sb_publishable_1h0tF13PS3hoOY5EJ5IThw_4VRcLCQg',
@@ -39,7 +44,7 @@ class MyApp extends StatelessWidget {
     return Consumer<SettingsProvider>(
       builder: (context, settings, child) {
         return MaterialApp(
-          title: 'Darawal-Kaab', // Professional App Name
+          title: 'Tusiye App', // Professional App Name
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
@@ -55,9 +60,15 @@ class MyApp extends StatelessWidget {
 
           home: Consumer<UserProvider>(
             builder: (context, userProvider, _) {
-              return userProvider.isAuthenticated
-                  ? const MainScreen()
-                  : const WelcomeScreen();
+              if (userProvider.needsPasswordReset) {
+                return const ResetPasswordScreen(email: '', isRecovery: true);
+              }
+              if (userProvider.isAuthenticated) {
+                return userProvider.status == 'suspended'
+                    ? const SuspendedScreen()
+                    : const MainScreen();
+              }
+              return const WelcomeScreen();
             },
           ),
         );

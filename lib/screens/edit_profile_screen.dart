@@ -115,19 +115,28 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     const Center(child: CircularProgressIndicator()),
               );
 
-              await Provider.of<UserProvider>(
-                context,
-                listen: false,
-              ).updateUser(
-                name: _nameController.text,
-                bio: _bioController.text,
-                email: _emailController.text,
-                phone: _phoneController.text,
-              );
+              try {
+                await Provider.of<UserProvider>(
+                  context,
+                  listen: false,
+                ).updateUser(
+                  name: _nameController.text,
+                  bio: _bioController.text,
+                  email: _emailController.text,
+                  phone: _phoneController.text,
+                );
 
-              if (context.mounted) {
-                Navigator.pop(context); // Close loading dialog
-                Navigator.pop(context); // Close EditProfileScreen
+                if (context.mounted) {
+                  Navigator.pop(context); // Close loading dialog
+                  Navigator.pop(context); // Close EditProfileScreen
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  Navigator.pop(context); // Close loading dialog
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error: $e')),
+                  );
+                }
               }
             },
             child: Text(

@@ -3,9 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../widgets/background_scaffold.dart';
 import '../../widgets/glass_container.dart';
-import '../../widgets/custom_text_field.dart';
 import '../../widgets/custom_button.dart';
-import '../main_screen.dart';
 import '../../services/auth_service.dart';
 
 import 'dart:async';
@@ -21,7 +19,6 @@ class EmailVerificationScreen extends StatefulWidget {
 }
 
 class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
-  final _otpController = TextEditingController();
   final _authService = AuthService();
   bool _isLoading = false;
   Timer? _timer;
@@ -55,19 +52,22 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
 
   @override
   void dispose() {
-    _otpController.dispose();
     _timer?.cancel();
     super.dispose();
   }
 
-  Future<void> _resendCode() async {
+  Future<void> _resendEmail() async {
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
       await _authService.resendOtp(widget.email);
       startTimer();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Code resent successfully!"),
+            content: Text("Confirmation email resent successfully!"),
             backgroundColor: Colors.green,
           ),
         );
@@ -77,44 +77,10 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
         String message = e.message;
         if (message.toLowerCase().contains('rate limit')) {
           message =
-              'Rate limit exceeded. Please wait a bit before requesting a new code.';
+              'Rate limit exceeded. Please wait a bit before requesting a new confirmation email.';
         }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(message), backgroundColor: Colors.red),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-
-  Future<void> _verifyEmail() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final otp = _otpController.text.trim();
-      if (otp.isEmpty) {
-        throw 'Please enter the verification code';
-      }
-
-      await _authService.verifyEmail(email: widget.email, token: otp);
-
-      if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const MainScreen()),
-          (route) => false,
-        );
-      }
-    } on AuthException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
         );
       }
     } catch (e) {
@@ -174,33 +140,27 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                     ).animate().fadeIn(delay: 100.ms).slideX(),
                     const SizedBox(height: 10),
                     Text(
-                      "Enter the 6-digit code sent to\n${widget.email}",
+                      "We have sent a verification link to\n${widget.email}\n\nPlease check your email inbox and click the confirmation link to activate your account.",
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 14,
                         color: Colors.white70,
+                        height: 1.4,
                       ),
                     ).animate().fadeIn(delay: 150.ms).slideX(),
                     const SizedBox(height: 30),
-                    CustomTextField(
-                      controller: _otpController,
-                      hintText: "Enter 6-digit Code",
-                      prefixIcon: Icons.lock_clock_outlined,
-                      keyboardType: TextInputType.number,
-                    ).animate().fadeIn(delay: 200.ms).slideY(),
-                    const SizedBox(height: 20),
 
                     // Resend Timer
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         const Text(
-                          "Didn't receive code? ",
+                          "Didn't receive email? ",
                           style: TextStyle(color: Colors.white70),
                         ),
                         if (_canResend)
                           GestureDetector(
-                            onTap: _resendCode,
+                            onTap: _resendEmail,
                             child: const Text(
                               "Resend",
                               style: TextStyle(
@@ -226,8 +186,10 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                     _isLoading
                         ? const CircularProgressIndicator(color: Colors.white)
                         : CustomButton(
-                            text: "Verify & Continue",
-                            onPressed: _verifyEmail,
+                            text: "Back to Sign In",
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                            },
                           ).animate().fadeIn(delay: 250.ms).slideY(),
                   ],
                 ),

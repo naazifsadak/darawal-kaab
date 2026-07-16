@@ -8,6 +8,7 @@ import 'change_password_screen.dart';
 import 'help_center_screen.dart';
 import 'about_app_screen.dart';
 import 'privacy_policy_screen.dart';
+import 'terms_of_service_screen.dart';
 import '../../services/auth_service.dart';
 import '../welcome_screen.dart';
 import 'package:darawalkaab/l10n/app_localizations.dart';
@@ -62,18 +63,6 @@ class SettingsScreen extends StatelessWidget {
             value: settings.notificationsEnabled,
             onChanged: (value) => settings.toggleNotifications(value),
           ),
-          Consumer<UserProvider>(
-            builder: (context, userProvider, _) {
-              return _buildSwitchTile(
-                context,
-                icon: Icons.visibility_off_outlined,
-                title: AppLocalizations.of(context)!.hideFollowersFollowing,
-                value: userProvider.hideFollowersFollowing,
-                onChanged: (value) =>
-                    userProvider.toggleHideFollowersFollowing(value),
-              );
-            },
-          ),
           _buildSwitchTile(
             context,
             icon: Icons.dark_mode_outlined,
@@ -126,6 +115,19 @@ class SettingsScreen extends StatelessWidget {
           ),
           _buildSettingsTile(
             context,
+            icon: Icons.description_outlined,
+            title: AppLocalizations.of(context)!.termsOfService,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const TermsOfServiceScreen(),
+                ),
+              );
+            },
+          ),
+          _buildSettingsTile(
+            context,
             icon: Icons.privacy_tip_outlined,
             title: AppLocalizations.of(context)!.privacyPolicy,
             onTap: () {
@@ -138,6 +140,13 @@ class SettingsScreen extends StatelessWidget {
             },
           ),
           const SizedBox(height: 24),
+          _buildSettingsTile(
+            context,
+            icon: Icons.delete_forever_outlined,
+            title: AppLocalizations.of(context)!.deleteAccount,
+            onTap: () => _showDeleteAccountDialog(context),
+            isDestructive: true,
+          ),
           _buildSettingsTile(
             context,
             icon: Icons.logout,
@@ -504,6 +513,64 @@ class SettingsScreen extends StatelessWidget {
             },
             child: Text(
               AppLocalizations.of(context)!.logOut,
+              style: const TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteAccountDialog(BuildContext context) {
+    final navigator = Navigator.of(context);
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(AppLocalizations.of(context)!.deleteAccountTitle),
+        content: Text(AppLocalizations.of(context)!.deleteAccountConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext); // Close the dialog
+
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (loadingContext) => const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              );
+
+              try {
+                await userProvider.deleteAccount();
+
+                if (context.mounted) {
+                  Navigator.pop(context); // Close loading indicator
+                  navigator.pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (context) => const WelcomeScreen()),
+                    (route) => false,
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  Navigator.pop(context); // Close loading indicator
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to delete account: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            },
+            child: Text(
+              AppLocalizations.of(context)!.delete,
               style: const TextStyle(color: Colors.red),
             ),
           ),

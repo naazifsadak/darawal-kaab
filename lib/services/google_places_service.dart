@@ -1,12 +1,9 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/service_place.dart';
 
 class GooglePlacesService {
-  final Dio _dio = Dio();
-
-  // NOTE: This key was retrieved from your AndroidManifest.xml Google Maps setup
-  static const String _apiKey = 'AIzaSyAHOeUAFjHezZRr9FT4RdGXxBpi9RQmKYE';
+  final _supabase = Supabase.instance.client;
 
   Future<List<ServicePlace>> fetchNearbyPlaces(
     double lat,
@@ -19,22 +16,19 @@ class GooglePlacesService {
         ? 'gas station'
         : 'car repair mechanic';
 
-    // Google Places API Nearby Search Endpoint
-    final String url =
-        'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
-
     try {
-      final response = await _dio.get(
-        url,
-        queryParameters: {
-          'location': '$lat,$lng',
+      final response = await _supabase.functions.invoke(
+        'google-places',
+        body: {
+          'action': 'nearbySearch',
+          'lat': lat,
+          'lng': lng,
           'radius': radius,
           'keyword': keyword,
-          'key': _apiKey,
         },
       );
 
-      if (response.statusCode == 200) {
+      if (response.status == 200) {
         final data = response.data;
         if (data['status'] == 'OK' || data['status'] == 'ZERO_RESULTS') {
           List<dynamic> results = data['results'] ?? [];
@@ -45,10 +39,18 @@ class GooglePlacesService {
             final address = el['vicinity'] ?? 'Address not available';
 
             // Google Places Nearby Search doesn't return phone or full hours by default
-            // unless we do a separate Place Details request. For performance and cost,
-            // we will use placeholders or basic info here.
+            // unless we do a separate Place Details request.
             final bool openNow = el['opening_hours']?['open_now'] ?? true;
             final double rating = (el['rating'] ?? 4.0).toDouble();
+
+            // The Edge Function resolves photo_references into public CDN URLs
+            // server-side so Image.network() can load them without auth headers.
+            // Use a type-specific local asset as the client-side fallback.
+            final String localFallback = type == ServiceType.gasStation
+                ? 'assets/images/hass_petroleum.jpg'
+                : 'assets/images/joes_repair.jpg';
+            final String resolvedPhoto =
+                (el['_resolvedPhotoUrl'] as String?) ?? localFallback;
 
             places.add(
               ServicePlace(
@@ -59,7 +61,7 @@ class GooglePlacesService {
                 rating: rating,
                 status: openNow ? 'Open Now' : 'Closed',
                 openHours: openNow ? 'Open' : 'Closed',
-                imageUrl: _getPhotoUrl(el['photos']),
+                imageUrl: resolvedPhoto,
                 type: type,
                 phone: 'Contact via Google Maps',
                 services: type == ServiceType.gasStation
@@ -85,15 +87,32 @@ class GooglePlacesService {
     }
   }
 
-  // Helper to extract the first photo URL if available
-  String _getPhotoUrl(dynamic photosArray) {
-    if (photosArray != null && photosArray is List && photosArray.isNotEmpty) {
-      final photoReference = photosArray[0]['photo_reference'];
-      if (photoReference != null) {
-        return 'https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=$photoReference&key=$_apiKey';
+  Future<String?> fetchPlacePhoneNumber(String placeId) async {
+    try {
+      final response = await _supabase.functions.invoke(
+        'google-places',
+        body: {
+          'action': 'details',
+          'place_id': placeId,
+          'fields': 'formatted_phone_number,international_phone_number',
+        },
+      );
+
+      if (response.status == 200) {
+        final data = response.data;
+        if (data['status'] == 'OK') {
+          final result = data['result'] ?? {};
+          return result['international_phone_number'] ?? result['formatted_phone_number'];
+        } else {
+          debugPrint("Google Place Details error status: ${data['status']} - ${data['error_message']}");
+        }
       }
+      return null;
+    } catch (e) {
+      debugPrint("Google Place Details HTTP error: $e");
+      return null;
     }
-    // Fallback image if no Google Place photo is available
-    return 'https://images.unsplash.com/photo-1527018601619-a508a2800447?q=80&w=2674&auto=format&fit=crop';
   }
+
+
 }

@@ -5,6 +5,7 @@ import '../models/user_model.dart';
 import '../models/comment_model.dart';
 import '../models/notification_model.dart';
 import '../services/database_service.dart';
+import '../services/notification_service.dart';
 
 class SocialProvider with ChangeNotifier {
   final DatabaseService _dbService = DatabaseService();
@@ -12,12 +13,16 @@ class SocialProvider with ChangeNotifier {
   bool _isLoading = false;
 
   List<String> _likedPostIds = [];
+  List<String> _likedCommentIds = [];
   List<String> _followedUserIds = [];
+  List<String> _blockedUserIds = [];
   List<NotificationItem> _notifications = [];
+  RealtimeChannel? _notificationsChannel;
 
   List<Post> get posts => _posts;
   bool get isLoading => _isLoading;
   List<NotificationItem> get notifications => _notifications;
+  List<String> get blockedUserIds => _blockedUserIds;
   int get unreadNotificationsCount =>
       _notifications.where((n) => !n.isRead).length;
 
@@ -27,15 +32,62 @@ class SocialProvider with ChangeNotifier {
       final session = data.session;
       if (session != null) {
         refreshFeed(); // Refresh when user logs in
+        _setupRealtimeNotifications(session.user.id);
       } else {
         _posts.clear(); // Clear posts when user logs out
+        _notificationsChannel?.unsubscribe();
         notifyListeners();
       }
     });
     // Initial fetch if already logged in
-    if (Supabase.instance.client.auth.currentSession != null) {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser != null) {
       refreshFeed();
+      _setupRealtimeNotifications(currentUser.id);
     }
+  }
+
+  void _setupRealtimeNotifications(String userId) {
+    _notificationsChannel?.unsubscribe();
+    _notificationsChannel = Supabase.instance.client
+        .channel('public:notifications:$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'notifications',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: (payload) {
+            // Fetch updated notifications
+            fetchNotifications();
+            // Show local notification
+            final newRecord = payload.newRecord;
+            final type = newRecord['type'] as String?;
+            String title = 'New Notification';
+            String body = 'You have a new notification.';
+            
+            if (type == 'like') {
+               title = 'New Like';
+               body = 'Someone liked your post.';
+            } else if (type == 'comment') {
+               title = 'New Comment';
+               body = 'Someone commented on your post.';
+            } else if (type == 'follow') {
+               title = 'New Follower';
+               body = 'Someone started following you.';
+            }
+
+            NotificationService().showNotification(
+              id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
+              title: title,
+              body: body,
+            );
+          },
+        )
+        .subscribe();
   }
 
   Future<void> refreshFeed() async {
@@ -46,51 +98,56 @@ class SocialProvider with ChangeNotifier {
       final currentUser = Supabase.instance.client.auth.currentUser;
       if (currentUser != null) {
         _likedPostIds = await _dbService.fetchLikedPostIds(currentUser.id);
+        _likedCommentIds = await _dbService.fetchLikedCommentIds(currentUser.id);
         _followedUserIds = await _dbService.fetchFollowedUserIds(
           currentUser.id,
         );
+        _blockedUserIds = await _dbService.fetchBlockedUserIds(currentUser.id);
         await fetchNotifications();
       } else {
         _likedPostIds = [];
+        _likedCommentIds = [];
         _followedUserIds = [];
+        _blockedUserIds = [];
         _notifications = [];
       }
 
       final data = await _dbService.fetchPosts();
 
       // Convert Supabase Map data into your Post and User models
-      _posts = data.map((json) {
-        final profile = json['profiles'] as Map<String, dynamic>;
+      _posts = data
+          .map((json) {
+            final profile = json['profiles'] as Map<String, dynamic>;
 
-        return Post(
-          id: json['id'].toString(),
-          roadName: json['road_name'] ?? 'Unknown Road',
-          description: json['description'] ?? '',
-          timeAgo: _formatTimeAgo(json['created_at']),
-          author: User(
-            id: json['author_id'],
-            name: profile['name'] ?? 'Driver User',
-            profileImage:
-                profile['profile_image'] ??
-                "https://ui-avatars.com/api/?name=${Uri.encodeComponent(profile['name'] ?? 'Driver+User')}&background=random",
-            bio: profile['bio'] ?? 'Road safety enthusiast.',
-            followers: profile['followers_count'] ?? 0,
-            following: profile['following_count'] ?? 0,
-            postsCount: profile['posts_count'] ?? 0,
-            isFollowing: _followedUserIds.contains(json['author_id']),
-            hideFollowersFollowing:
-                profile['hide_followers_following'] ?? false,
-          ),
-          likes: (json['likes_count'] ?? 0) as int,
-          dbCommentsCount: (json['comments_count'] ?? 0) as int,
-          comments:
-              [], // Initialize with empty list; fetch separately if needed
-          color: Colors.blue[100]!,
-          imageUrl: json['image_url'],
-          videoUrl: json['video_url'],
-          isLiked: _likedPostIds.contains(json['id'].toString()),
-        );
-      }).toList();
+            return Post(
+              id: json['id'].toString(),
+              roadName: json['road_name'] ?? 'Unknown Road',
+              description: json['description'] ?? '',
+              timeAgo: _formatTimeAgo(json['created_at']),
+              author: User(
+                id: json['author_id'],
+                name: profile['name'] ?? 'Driver User',
+                profileImage:
+                    profile['profile_image'] ??
+                    "https://ui-avatars.com/api/?name=${Uri.encodeComponent(profile['name'] ?? 'Driver+User')}&background=random&size=512",
+                bio: profile['bio'] ?? 'Road safety enthusiast.',
+                followers: profile['followers_count'] ?? 0,
+                following: profile['following_count'] ?? 0,
+                postsCount: profile['posts_count'] ?? 0,
+                isFollowing: _followedUserIds.contains(json['author_id']),
+              ),
+              likes: (json['likes_count'] ?? 0) as int,
+              dbCommentsCount: (json['comments_count'] ?? 0) as int,
+              comments:
+                  [], // Initialize with empty list; fetch separately if needed
+              color: Colors.blue[100]!,
+              imageUrl: json['image_url'],
+              videoUrl: json['video_url'],
+              isLiked: _likedPostIds.contains(json['id'].toString()),
+            );
+          })
+          .where((post) => !_blockedUserIds.contains(post.author.id))
+          .toList();
     } catch (e) {
       debugPrint("Error refreshing feed: $e");
     } finally {
@@ -120,54 +177,133 @@ class SocialProvider with ChangeNotifier {
     }
   }
 
-  // Adds a comment locally to the UI immediately
-  void addComment(String postId, String text, User author) {
-    final postIndex = _posts.indexWhere((p) => p.id == postId);
-    if (postIndex != -1) {
-      final newComment = Comment(
-        id: DateTime.now().toString(),
-        text: text,
-        author: author,
-        timestamp: DateTime.now(),
-      );
-      _posts[postIndex].comments.add(newComment);
-      _posts[postIndex].dbCommentsCount++;
-      notifyListeners();
+  void toggleCommentLike(String postId, String commentId) {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) return;
 
-      // Persist to Supabase
-      _dbService.addComment(postId, author.id, text);
-    }
-  }
-
-  void replyToComment(
-    String postId,
-    String commentId,
-    String text,
-    User author,
-  ) {
     final postIndex = _posts.indexWhere((p) => p.id == postId);
     if (postIndex != -1) {
       final post = _posts[postIndex];
-      final commentIndex = post.comments.indexWhere((c) => c.id == commentId);
-      if (commentIndex != -1) {
-        final reply = Comment(
-          id: DateTime.now().toString(),
-          text: text,
-          author: author,
-          timestamp: DateTime.now(),
-        );
-        post.comments[commentIndex].replies.add(reply);
-        post.dbCommentsCount++;
+      // Recursive function to find and toggle comment
+      bool toggleInList(List<Comment> comments) {
+        for (var comment in comments) {
+          if (comment.id == commentId) {
+            comment.isLiked = !comment.isLiked;
+            if (comment.isLiked) {
+              comment.likes++;
+              _likedCommentIds.add(commentId);
+            } else {
+              comment.likes--;
+              _likedCommentIds.remove(commentId);
+            }
+            return true;
+          }
+          if (toggleInList(comment.replies)) return true;
+        }
+        return false;
+      }
+      
+      if (toggleInList(post.comments)) {
         notifyListeners();
-
-        // Persist to database with parent_id
-        _dbService.addComment(postId, author.id, text, commentId);
+        // Since we already toggled, pass the updated value
+        final updatedIsLiked = _likedCommentIds.contains(commentId);
+        try {
+          _dbService.toggleCommentLike(commentId, currentUser.id, updatedIsLiked).catchError((e) {
+            debugPrint("Toggle comment like error: $e");
+          });
+        } catch (e) {
+          debugPrint("Toggle comment like error: $e");
+        }
       }
     }
   }
 
+  Future<void> addComment(String postId, String text, User author) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) return;
+
+    try {
+      await _dbService.addComment(postId, currentUser.id, text);
+      final postIndex = _posts.indexWhere((p) => p.id == postId);
+      if (postIndex != -1) {
+        _posts[postIndex].dbCommentsCount++;
+        notifyListeners();
+      }
+      await fetchCommentsForPost(postId);
+    } catch (e) {
+      debugPrint("Error adding comment: $e");
+    }
+  }
+
+  Future<void> replyToComment(
+    String postId,
+    String commentId,
+    String text,
+    User author,
+  ) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) return;
+
+    try {
+      await _dbService.addComment(postId, currentUser.id, text, commentId);
+      final postIndex = _posts.indexWhere((p) => p.id == postId);
+      if (postIndex != -1) {
+        _posts[postIndex].dbCommentsCount++;
+        notifyListeners();
+      }
+      await fetchCommentsForPost(postId);
+    } catch (e) {
+      debugPrint("Error replying to comment: $e");
+    }
+  }
+
+  // --- FOLLOWER LISTS ---
+  Future<List<User>> getFollowers(String userId) async {
+    try {
+      final data = await _dbService.fetchFollowerProfiles(userId);
+      return data.map((json) {
+        return User(
+          id: json['id'],
+          name: json['name'] ?? 'Unknown User',
+          profileImage: json['profile_image'] ?? 'assets/images/placeholder.png',
+          bio: json['bio'] ?? '',
+          followers: json['followers_count'] ?? 0,
+          following: json['following_count'] ?? 0,
+          postsCount: json['posts_count'] ?? 0,
+          isFollowing: _followedUserIds.contains(json['id']),
+        );
+      }).toList();
+    } catch (e) {
+      debugPrint("Error fetching followers: $e");
+      return [];
+    }
+  }
+
+  Future<List<User>> getFollowing(String userId) async {
+    try {
+      final data = await _dbService.fetchFollowingProfiles(userId);
+      return data.map((json) {
+        return User(
+          id: json['id'],
+          name: json['name'] ?? 'Unknown User',
+          profileImage: json['profile_image'] ?? 'assets/images/placeholder.png',
+          bio: json['bio'] ?? '',
+          followers: json['followers_count'] ?? 0,
+          following: json['following_count'] ?? 0,
+          postsCount: json['posts_count'] ?? 0,
+          isFollowing: _followedUserIds.contains(json['id']),
+        );
+      }).toList();
+    } catch (e) {
+      debugPrint("Error fetching following: $e");
+      return [];
+    }
+  }
+
   // Toggle Follow
-  void toggleFollow(String userId) {
+  bool isFollowing(String userId) => _followedUserIds.contains(userId);
+
+  Future<void> toggleFollow(String userId) async {
     final currentUser = Supabase.instance.client.auth.currentUser;
     if (currentUser == null || currentUser.id == userId) return;
 
@@ -188,7 +324,7 @@ class SocialProvider with ChangeNotifier {
         }
       }
       notifyListeners();
-      _dbService.toggleFollow(currentUser.id, userId, isFollowingNow);
+      await _dbService.toggleFollow(currentUser.id, userId, isFollowingNow);
     } catch (e) {
       debugPrint("Error toggling follow: $e");
     }
@@ -240,22 +376,27 @@ class SocialProvider with ChangeNotifier {
       final List<Map<String, dynamic>> repliesData = [];
 
       for (var json in data) {
+        final authorId = json['author_id'] as String;
+        if (_blockedUserIds.contains(authorId)) continue;
+
         final profile = json['profiles'] as Map<String, dynamic>;
         final comment = Comment(
           id: json['id'].toString(),
           text: json['text'] ?? '',
           author: User(
-            id: json['author_id'],
+            id: authorId,
             name: profile['name'] ?? 'Driver User',
             profileImage:
                 profile['profile_image'] ??
-                "https://ui-avatars.com/api/?name=${Uri.encodeComponent(profile['name'] ?? 'Driver+User')}&background=random",
+                "https://ui-avatars.com/api/?name=${Uri.encodeComponent(profile['name'] ?? 'Driver+User')}&background=random&size=512",
             bio: '',
             followers: 0,
             following: 0,
             postsCount: 0,
           ),
           timestamp: DateTime.parse(json['created_at']).toLocal(),
+          likes: (json['likes_count'] ?? 0) as int,
+          isLiked: _likedCommentIds.contains(json['id'].toString()),
         );
 
         commentMap[comment.id] = comment;
@@ -322,15 +463,13 @@ class SocialProvider with ChangeNotifier {
             name: profile['name'] ?? 'Driver User',
             profileImage:
                 profile['profile_image'] ??
-                "https://ui-avatars.com/api/?name=${Uri.encodeComponent(profile['name'] ?? 'Driver+User')}&background=random",
+                "https://ui-avatars.com/api/?name=${Uri.encodeComponent(profile['name'] ?? 'Driver+User')}&background=random&size=512",
             bio: profile['bio'] ?? 'Road safety enthusiast.',
             followers:
                 profile['followers_count'] ?? 0, // Ensure real data using map
             following: profile['following_count'] ?? 0,
             postsCount: profile['posts_count'] ?? 0,
             isFollowing: _followedUserIds.contains(json['author_id']),
-            hideFollowersFollowing:
-                profile['hide_followers_following'] ?? false,
           ),
           likes: (json['likes_count'] ?? 0) as int,
           dbCommentsCount: (json['comments_count'] ?? 0) as int,
@@ -357,12 +496,11 @@ class SocialProvider with ChangeNotifier {
         id: id,
         name: 'Unknown User',
         profileImage:
-            "https://ui-avatars.com/api/?name=Unknown+User&background=random",
+            "https://ui-avatars.com/api/?name=Unknown+User&background=random&size=512",
         bio: 'User details not available.',
         followers: 0,
         following: 0,
         postsCount: 0,
-        hideFollowersFollowing: false,
       );
     }
   }
@@ -377,13 +515,12 @@ class SocialProvider with ChangeNotifier {
         name: data['name'] ?? 'Unknown',
         profileImage:
             data['profile_image'] ??
-            "https://ui-avatars.com/api/?name=Unknown&background=random",
+            "https://ui-avatars.com/api/?name=Unknown&background=random&size=512",
         bio: data['bio'] ?? '',
-        followers: (data['followers_count'] ?? 0) as int,
-        following: (data['following_count'] ?? 0) as int,
-        postsCount: (data['posts_count'] ?? 0) as int,
+        followers: (data['true_followers_count'] ?? data['followers_count'] ?? 0) as int,
+        following: (data['true_following_count'] ?? data['following_count'] ?? 0) as int,
+        postsCount: (data['posts'] as List?)?.length ?? (data['posts_count'] ?? 0) as int,
         isFollowing: _followedUserIds.contains(userId),
-        hideFollowersFollowing: data['hide_followers_following'] ?? false,
       );
     } catch (e) {
       debugPrint("Error fetching profile: $e");
@@ -406,13 +543,11 @@ class SocialProvider with ChangeNotifier {
           name: senderData['name'] ?? 'Unknown',
           profileImage:
               senderData['profile_image'] ??
-              "https://ui-avatars.com/api/?name=Unknown&background=random",
+              "https://ui-avatars.com/api/?name=Unknown&background=random&size=512",
           bio: senderData['bio'] ?? '',
           followers: senderData['followers_count'] ?? 0,
           following: senderData['following_count'] ?? 0,
           postsCount: senderData['posts_count'] ?? 0,
-          hideFollowersFollowing:
-              senderData['hide_followers_following'] ?? false,
           isFollowing: _followedUserIds.contains(senderData['id']),
         );
 
@@ -474,6 +609,61 @@ class SocialProvider with ChangeNotifier {
       }
     } catch (e) {
       return "Recently";
+    }
+  }
+
+  Future<void> blockUser(String blockedId) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) return;
+    try {
+      await _dbService.blockUser(currentUser.id, blockedId);
+      _blockedUserIds.add(blockedId);
+      // Remove all posts from this user from local state to update UI immediately
+      _posts.removeWhere((post) => post.author.id == blockedId);
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Error blocking user: $e");
+      rethrow;
+    }
+  }
+
+  Future<void> reportPost({
+    required String postId,
+    required String reason,
+    String? details,
+  }) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) return;
+    try {
+      await _dbService.reportPost(
+        reporterId: currentUser.id,
+        postId: postId,
+        reason: reason,
+        details: details,
+      );
+    } catch (e) {
+      debugPrint("Error reporting post: $e");
+      rethrow;
+    }
+  }
+
+  Future<void> reportComment({
+    required String commentId,
+    required String reason,
+    String? details,
+  }) async {
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) return;
+    try {
+      await _dbService.reportComment(
+        reporterId: currentUser.id,
+        commentId: commentId,
+        reason: reason,
+        details: details,
+      );
+    } catch (e) {
+      debugPrint("Error reporting comment: $e");
+      rethrow;
     }
   }
 }

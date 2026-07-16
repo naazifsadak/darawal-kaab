@@ -250,25 +250,34 @@ class _ServiceListScreenState extends State<ServiceListScreen> {
                             padding: const EdgeInsets.all(16),
                             child: Row(
                               children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: Image.network(
-                                    place.imageUrl,
-                                    width: 80,
-                                    height: 80,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Container(
-                                        width: 80,
-                                        height: 80,
-                                        color: Colors.grey,
-                                        child: const Icon(
-                                          Icons.image_not_supported,
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
+                                 ClipRRect(
+                                   borderRadius: BorderRadius.circular(12),
+                                   child: place.imageUrl.startsWith('assets/')
+                                       ? Image.asset(
+                                           place.imageUrl,
+                                           width: 80,
+                                           height: 80,
+                                           fit: BoxFit.cover,
+                                         )
+                                       : Image.network(
+                                           place.imageUrl,
+                                           width: 80,
+                                           height: 80,
+                                           fit: BoxFit.cover,
+                                           errorBuilder: (context, error, stackTrace) {
+                                             // Fall back to a local asset image on network error
+                                             final asset = place.type == ServiceType.gasStation
+                                                 ? 'assets/images/hass_petroleum.jpg'
+                                                 : 'assets/images/joes_repair.jpg';
+                                             return Image.asset(
+                                               asset,
+                                               width: 80,
+                                               height: 80,
+                                               fit: BoxFit.cover,
+                                             );
+                                           },
+                                         ),
+                                 ),
                                 const SizedBox(width: 16),
                                 Expanded(
                                   child: Consumer<FavoritesProvider>(

@@ -32,62 +32,65 @@ class AboutAppScreen extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                color: Colors.blue,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.blue.withAlpha(100),
-                    blurRadius: 20,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.directions_car,
-                color: Colors.white,
-                size: 50,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              AppLocalizations.of(context)!.appTitle,
-              style: GoogleFonts.poppins(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: textColor,
-              ),
-            ),
-            Text(
-              "Version 1.0.0",
-              style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey),
-            ),
-            const SizedBox(height: 48),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 40),
-              child: Text(
-                "Darawal-Kaab is your ultimate road companion, providing real-time traffic updates, post-accident reporting, and connecting you with nearby services.",
-                textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                  height: 1.6,
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: Colors.blue,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.blue.withAlpha(100),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.directions_car,
+                  color: Colors.white,
+                  size: 50,
                 ),
               ),
-            ),
-            const SizedBox(height: 48),
-            Text(
-              "© 2026 Darawal-Kaab Inc.",
-              style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[400]),
-            ),
-          ],
+              const SizedBox(height: 24),
+              Text(
+                AppLocalizations.of(context)!.appTitle,
+                style: GoogleFonts.poppins(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: textColor,
+                ),
+              ),
+              Text(
+                "Version 1.0.0",
+                style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey),
+              ),
+              const SizedBox(height: 48),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 40),
+                child: Text(
+                  "Tusiye App is your ultimate road companion, providing real-time traffic updates, post-accident reporting, and connecting you with nearby services.",
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                    height: 1.6,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 48),
+              Text(
+                "© 2026 Tusiye App Inc.",
+                style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[400]),
+              ),
+            ],
+          ),
         ),
       ),
     );

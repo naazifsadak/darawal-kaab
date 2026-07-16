@@ -63,7 +63,7 @@ class HelpCenterScreen extends StatelessWidget {
             _buildFAQItem(
               context,
               "How do I contact support?",
-              "You can contact us via email at support@darawalkaab.com or call our hotline.",
+              "You can contact us via email at info@tusiye.app or call our hotline.",
               cardColor,
               textColor,
             ),
@@ -113,7 +113,7 @@ class HelpCenterScreen extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          "support@darawalkaab.com",
+                          "info@tusiye.app",
                           style: GoogleFonts.poppins(
                             fontSize: 14,
                             color: Colors.grey,

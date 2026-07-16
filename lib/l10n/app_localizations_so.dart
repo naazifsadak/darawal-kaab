@@ -9,7 +9,7 @@ class AppLocalizationsSo extends AppLocalizations {
   AppLocalizationsSo([String locale = 'so']) : super(locale);
 
   @override
-  String get appTitle => 'Darawal-Kaab';
+  String get appTitle => 'Tusiye App';
 
   @override
   String get home => 'Bogga Hore';
@@ -87,10 +87,6 @@ class AppLocalizationsSo extends AppLocalizations {
   String get notifications => 'Ogeysiisyo';
 
   @override
-  String get hideFollowersFollowing =>
-      'Qari Taageerayaasha & Kuwa La Taageerayo';
-
-  @override
   String get darkMode => 'Habeen Mode';
 
   @override
@@ -103,7 +99,7 @@ class AppLocalizationsSo extends AppLocalizations {
   String get privacyPolicy => 'Shuruudaha Qarsoodiga';
 
   @override
-  String get welcomeTitle => 'Si Caqliyeed Ku Soco La\nDarawal-Kaab';
+  String get welcomeTitle => 'Si Caqliyeed Ku Soco La\nTusiye App';
 
   @override
   String get welcomeSubtitle =>
@@ -216,4 +212,62 @@ class AppLocalizationsSo extends AppLocalizations {
 
   @override
   String get deletePost => 'Tir Dhambaalka';
+
+  @override
+  String get recentRoadConditions => 'Xaaladihii Ugu Dambeeyay Ee Wadooyinka';
+
+  @override
+  String get viewAll => 'Arag Dhammaan';
+
+  @override
+  String get termsOfService => 'Shuruudaha Adeegga';
+
+  @override
+  String get deleteAccount => 'Tir Koontada';
+
+  @override
+  String get deleteAccountTitle => 'Ma Tirtaa Koontada?';
+
+  @override
+  String get deleteAccountConfirm =>
+      'Ma hubtaa inaad tirto koontadaada? Ficilkan waa mid joogto ah mana ahan mid dib loo celin karo.';
+
+  @override
+  String get reportPost => 'Gudbi Cabasho Dhambaal';
+
+  @override
+  String get reportComment => 'Gudbi Cabasho Faallo';
+
+  @override
+  String get blockUser => 'Xannib Isticmaalaha';
+
+  @override
+  String get reportReasonSpam => 'Spam ama marin-habaabin';
+
+  @override
+  String get reportReasonHarassment => 'Hanjabaad ama nacayb';
+
+  @override
+  String get reportReasonInappropriate => 'Qoraal aan habboonayn ama xun';
+
+  @override
+  String get reportReasonOther => 'Sabab kale';
+
+  @override
+  String get reportSubmitted =>
+      'Cabashadaada waa la gudbiyay. Waad ku mahadsan tahay ilaalinta badbaadada bulshadayada.';
+
+  @override
+  String get userBlocked =>
+      'Isticmaalaha waa la xannibay. Dib uma arki doontid qoraaladooda.';
+
+  @override
+  String get confirmBlockUser =>
+      'Ma hubtaa inaad xannibto isticmaalahaan? Dib uma arki doontid dhambaaladooda ama faallooyinkooda.';
+
+  @override
+  String get block => 'Xannib';
+
+  @override
+  String get report => 'Gudbi';
 }

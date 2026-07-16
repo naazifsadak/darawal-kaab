@@ -1,18 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:provider/provider.dart';
 import '../../widgets/background_scaffold.dart';
 import '../../widgets/glass_container.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/custom_button.dart';
 import '../../services/auth_service.dart';
-import 'sign_in_screen.dart';
+import '../../providers/user_provider.dart';
 
 import 'dart:async';
 
 class ResetPasswordScreen extends StatefulWidget {
   final String email;
+  final bool isRecovery;
 
-  const ResetPasswordScreen({super.key, required this.email});
+  const ResetPasswordScreen({
+    super.key,
+    required this.email,
+    this.isRecovery = false,
+  });
 
   @override
   State<ResetPasswordScreen> createState() => _ResetPasswordScreenState();
@@ -30,7 +36,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   @override
   void initState() {
     super.initState();
-    startTimer();
+    if (!widget.isRecovery) {
+      startTimer();
+    }
   }
 
   void startTimer() {
@@ -87,30 +95,55 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     });
 
     try {
-      final otp = _otpController.text.trim();
       final newPassword = _newPasswordController.text.trim();
 
-      if (otp.isEmpty || newPassword.isEmpty) {
-        throw 'Please fill in all fields';
-      }
+      if (widget.isRecovery) {
+        if (newPassword.isEmpty) {
+          throw 'Please enter a new password';
+        }
+        if (newPassword.length < 6) {
+          throw 'Password must be at least 6 characters long';
+        }
 
-      // 1. Verify OTP (Recovery type)
-      await _authService.verifyRecoveryOtp(email: widget.email, token: otp);
+        // 1. Update Password directly (already authenticated via recovery link)
+        await _authService.updatePassword(newPassword);
 
-      // 2. Update Password (now authenticated)
-      await _authService.updatePassword(newPassword);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Password updated successfully! Welcome back."),
+              backgroundColor: Colors.green,
+            ),
+          );
+          // Reset the recovery state to trigger home screen reload
+          final userProvider = Provider.of<UserProvider>(context, listen: false);
+          userProvider.setNeedsPasswordReset(false);
+        }
+      } else {
+        final otp = _otpController.text.trim();
+        if (otp.isEmpty || newPassword.isEmpty) {
+          throw 'Please fill in all fields';
+        }
+        if (newPassword.length < 6) {
+          throw 'Password must be at least 6 characters long';
+        }
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Password updated successfully! Please sign in."),
-            backgroundColor: Colors.green,
-          ),
-        );
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const SignInScreen()),
-          (route) => false,
-        );
+        // 1. Verify OTP (Recovery type)
+        await _authService.verifyRecoveryOtp(email: widget.email, token: otp);
+
+        // 2. Update Password (now authenticated)
+        await _authService.updatePassword(newPassword);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Password updated successfully! Welcome back."),
+              backgroundColor: Colors.green,
+            ),
+          );
+          // Pop all the way back to the root route (which rebuilds to MainScreen now that they are authenticated)
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -140,7 +173,15 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 alignment: Alignment.topLeft,
                 child: IconButton(
                   icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () async {
+                    if (widget.isRecovery) {
+                      final userProvider = Provider.of<UserProvider>(context, listen: false);
+                      await userProvider.signOut();
+                      userProvider.setNeedsPasswordReset(false);
+                    } else {
+                      Navigator.of(context).pop();
+                    }
+                  },
                 ),
               ),
               const CircleAvatar(
@@ -164,19 +205,23 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       ),
                     ).animate().fadeIn(delay: 100.ms).slideX(),
                     const SizedBox(height: 10),
-                    const Text(
-                      "Enter the code and your new password",
+                    Text(
+                      widget.isRecovery
+                          ? "Enter your new password below"
+                          : "Enter the code and your new password",
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 14, color: Colors.white70),
+                      style: const TextStyle(fontSize: 14, color: Colors.white70),
                     ).animate().fadeIn(delay: 150.ms).slideX(),
                     const SizedBox(height: 30),
-                    CustomTextField(
-                      controller: _otpController,
-                      hintText: "6-digit Recovery Code",
-                      prefixIcon: Icons.lock_clock_outlined,
-                      keyboardType: TextInputType.number,
-                    ).animate().fadeIn(delay: 200.ms).slideY(),
-                    const SizedBox(height: 15),
+                    if (!widget.isRecovery) ...[
+                      CustomTextField(
+                        controller: _otpController,
+                        hintText: "6-digit Recovery Code",
+                        prefixIcon: Icons.lock_clock_outlined,
+                        keyboardType: TextInputType.number,
+                      ).animate().fadeIn(delay: 200.ms).slideY(),
+                      const SizedBox(height: 15),
+                    ],
                     CustomTextField(
                       controller: _newPasswordController,
                       hintText: "New Password",
@@ -189,45 +234,67 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                     ).animate().fadeIn(delay: 250.ms).slideY(),
                     const SizedBox(height: 20),
 
-                    // Resend Timer
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text(
-                          "Didn't receive code? ",
-                          style: TextStyle(color: Colors.white70),
-                        ),
-                        if (_canResend)
-                          GestureDetector(
-                            onTap: _resendCode,
-                            child: const Text(
-                              "Resend",
-                              style: TextStyle(
-                                color: Colors.white,
+                    if (!widget.isRecovery) ...[
+                      // Resend Timer
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text(
+                            "Didn't receive code? ",
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                          if (_canResend)
+                            GestureDetector(
+                              onTap: _resendCode,
+                              child: const Text(
+                                "Resend",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  decoration: TextDecoration.underline,
+                                  decorationColor: Colors.white,
+                                ),
+                              ),
+                            )
+                          else
+                            Text(
+                              "Resend in $_start s",
+                              style: const TextStyle(
+                                color: Colors.grey,
                                 fontWeight: FontWeight.bold,
-                                decoration: TextDecoration.underline,
-                                decorationColor: Colors.white,
                               ),
                             ),
-                          )
-                        else
-                          Text(
-                            "Resend in $_start s",
-                            style: const TextStyle(
-                              color: Colors.grey,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                      ],
-                    ).animate().fadeIn(delay: 220.ms),
+                        ],
+                      ).animate().fadeIn(delay: 220.ms),
+                      const SizedBox(height: 30),
+                    ],
 
-                    const SizedBox(height: 30),
                     _isLoading
                         ? const CircularProgressIndicator(color: Colors.white)
                         : CustomButton(
-                            text: "Set New Password",
+                            text: widget.isRecovery ? "Update Password" : "Set New Password",
                             onPressed: _resetPassword,
                           ).animate().fadeIn(delay: 300.ms).slideY(),
+                    
+                    if (widget.isRecovery) ...[
+                      const SizedBox(height: 15),
+                      TextButton(
+                        onPressed: () async {
+                          final userProvider = Provider.of<UserProvider>(context, listen: false);
+                          await userProvider.signOut();
+                          userProvider.setNeedsPasswordReset(false);
+                        },
+                        child: const Text(
+                          "Cancel",
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                            decoration: TextDecoration.underline,
+                            decorationColor: Colors.white38,
+                          ),
+                        ),
+                      ).animate().fadeIn(delay: 350.ms),
+                    ],
                   ],
                 ),
               ),

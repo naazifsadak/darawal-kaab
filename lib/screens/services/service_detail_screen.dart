@@ -7,17 +7,119 @@ import '../../models/service_place.dart';
 import '../../providers/favorites_provider.dart';
 import 'map_screen.dart';
 import 'package:darawalkaab/l10n/app_localizations.dart';
+import '../../services/google_places_service.dart';
 
-class ServiceDetailScreen extends StatelessWidget {
+class ServiceDetailScreen extends StatefulWidget {
   final ServicePlace place;
 
   const ServiceDetailScreen({super.key, required this.place});
 
+  @override
+  State<ServiceDetailScreen> createState() => _ServiceDetailScreenState();
+}
+
+class _ServiceDetailScreenState extends State<ServiceDetailScreen> {
+  late ServicePlace _updatedPlace;
+  late String _phoneNumber;
+  bool _isLoadingPhone = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _updatedPlace = widget.place;
+    _phoneNumber = widget.place.phone;
+    if (_phoneNumber == 'Contact via Google Maps' ||
+        _phoneNumber == 'Phone not available') {
+      _fetchRealPhoneNumber();
+    }
+  }
+
+  Future<void> _fetchRealPhoneNumber() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingPhone = true;
+    });
+
+    try {
+      final googlePlaces = GooglePlacesService();
+      final realPhone = await googlePlaces.fetchPlacePhoneNumber(widget.place.id);
+      if (realPhone != null && realPhone.isNotEmpty) {
+        if (mounted) {
+          setState(() {
+            _phoneNumber = realPhone;
+            _updatedPlace = ServicePlace(
+              id: widget.place.id,
+              name: widget.place.name,
+              address: widget.place.address,
+              distance: widget.place.distance,
+              rating: widget.place.rating,
+              status: widget.place.status,
+              openHours: widget.place.openHours,
+              imageUrl: widget.place.imageUrl,
+              type: widget.place.type,
+              phone: realPhone,
+              services: widget.place.services,
+              latitude: widget.place.latitude,
+              longitude: widget.place.longitude,
+            );
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _phoneNumber = 'Phone not available';
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching phone number: $e");
+      if (mounted) {
+        setState(() {
+          _phoneNumber = 'Phone not available';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingPhone = false;
+        });
+      }
+    }
+  }
+
   Future<void> _makePhoneCall(String phoneNumber) async {
+    if (phoneNumber == 'Contact via Google Maps' ||
+        phoneNumber == 'Phone not available' ||
+        phoneNumber.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Phone number is not available for this station.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
     final Uri launchUri = Uri(scheme: 'tel', path: phoneNumber);
-    if (!await launchUrl(launchUri)) {
-      // Handle error, maybe show a snackbar
-      debugPrint('Could not launch $launchUri');
+    try {
+      if (!await launchUrl(launchUri)) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not call $phoneNumber'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Could not launch phone call: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error placing call: $e'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -45,6 +147,7 @@ class ServiceDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final place = widget.place;
     return Scaffold(
       backgroundColor: Colors.white,
       body: CustomScrollView(
@@ -74,7 +177,7 @@ class ServiceDetailScreen extends StatelessWidget {
                       ],
                     ),
                     onPressed: () {
-                      favoritesProvider.toggleFavorite(place);
+                      favoritesProvider.toggleFavorite(_updatedPlace);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
@@ -101,21 +204,29 @@ class ServiceDetailScreen extends StatelessWidget {
                   // Background Image/Placeholder
                   Container(
                     color: Colors.grey[300],
-                    child: Image.network(
-                      place.imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Center(
-                          child: Icon(
-                            place.type == ServiceType.gasStation
-                                ? Icons.local_gas_station
-                                : Icons.build,
-                            size: 80,
-                            color: Colors.grey[500],
+                    child: place.imageUrl.startsWith('assets/')
+                        ? Image.asset(
+                            place.imageUrl,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            height: double.infinity,
+                          )
+                        : Image.network(
+                            place.imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              // Fall back to a local asset image on network error
+                              final asset = place.type == ServiceType.gasStation
+                                  ? 'assets/images/hass_petroleum.jpg'
+                                  : 'assets/images/joes_repair.jpg';
+                              return Image.asset(
+                                asset,
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                                height: double.infinity,
+                              );
+                            },
                           ),
-                        );
-                      },
-                    ),
                   ),
 
                   // Gradient Overlay
@@ -319,6 +430,30 @@ class ServiceDetailScreen extends StatelessWidget {
                     const Divider(thickness: 1),
                     const SizedBox(height: 20),
 
+                    // Phone Number
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.phone,
+                          color: Color(0xFF1976D2),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _isLoadingPhone ? "Loading phone..." : _phoneNumber,
+                            style: GoogleFonts.poppins(
+                              fontSize: 15,
+                              color: Colors.black,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    const Divider(thickness: 1),
+                    const SizedBox(height: 20),
+
                     // Hours
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -376,7 +511,7 @@ class ServiceDetailScreen extends StatelessWidget {
                       children: [
                         Expanded(
                           child: ElevatedButton.icon(
-                            onPressed: () => _makePhoneCall(place.phone),
+                            onPressed: () => _makePhoneCall(_phoneNumber),
                             icon: const Icon(Icons.call, color: Colors.white),
                             label: Text(
                               AppLocalizations.of(context)!.call,

@@ -9,7 +9,7 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get appTitle => 'Darawal-Kaab';
+  String get appTitle => 'Tusiye App';
 
   @override
   String get home => 'Home';
@@ -87,9 +87,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get notifications => 'Notifications';
 
   @override
-  String get hideFollowersFollowing => 'Hide Followers & Following';
-
-  @override
   String get darkMode => 'Dark Mode';
 
   @override
@@ -102,7 +99,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get privacyPolicy => 'Privacy Policy';
 
   @override
-  String get welcomeTitle => 'Drive Smarter with\nDarawal-Kaab';
+  String get welcomeTitle => 'Drive Smarter with\nTusiye App';
 
   @override
   String get welcomeSubtitle =>
@@ -214,4 +211,62 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deletePost => 'Delete Post';
+
+  @override
+  String get recentRoadConditions => 'Recent Road Conditions';
+
+  @override
+  String get viewAll => 'View All';
+
+  @override
+  String get termsOfService => 'Terms of Service';
+
+  @override
+  String get deleteAccount => 'Delete Account';
+
+  @override
+  String get deleteAccountTitle => 'Delete Account?';
+
+  @override
+  String get deleteAccountConfirm =>
+      'Are you sure you want to delete your account? This action is permanent and cannot be undone.';
+
+  @override
+  String get reportPost => 'Report Post';
+
+  @override
+  String get reportComment => 'Report Comment';
+
+  @override
+  String get blockUser => 'Block User';
+
+  @override
+  String get reportReasonSpam => 'Spam or misleading';
+
+  @override
+  String get reportReasonHarassment => 'Harassment or hate speech';
+
+  @override
+  String get reportReasonInappropriate => 'Inappropriate or offensive content';
+
+  @override
+  String get reportReasonOther => 'Other reason';
+
+  @override
+  String get reportSubmitted =>
+      'Report submitted. Thank you for keeping our community safe.';
+
+  @override
+  String get userBlocked =>
+      'User blocked. You will no longer see their content.';
+
+  @override
+  String get confirmBlockUser =>
+      'Are you sure you want to block this user? You will no longer see their posts or comments.';
+
+  @override
+  String get block => 'Block';
+
+  @override
+  String get report => 'Report';
 }

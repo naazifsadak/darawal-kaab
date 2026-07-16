@@ -7,6 +7,7 @@ import '../../widgets/custom_text_field.dart';
 import '../../widgets/custom_button.dart';
 import 'sign_up_screen.dart';
 import 'forgot_password_screen.dart';
+import 'email_verification_screen.dart';
 import '../main_screen.dart';
 import '../../services/auth_service.dart';
 
@@ -36,10 +37,10 @@ class _SignInScreenState extends State<SignInScreen> {
       _isLoading = true;
     });
 
-    try {
-      final email = _emailController.text.trim();
-      final password = _passwordController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
 
+    try {
       if (email.isEmpty || password.isEmpty) {
         throw 'Please enter both email and password';
       }
@@ -54,9 +55,26 @@ class _SignInScreenState extends State<SignInScreen> {
       }
     } on supabase.AuthException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
-        );
+        final message = e.message;
+        if (message.toLowerCase().contains('email not confirmed') ||
+            message.toLowerCase().contains('confirm your email') ||
+            message.toLowerCase().contains('email_not_confirmed')) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => EmailVerificationScreen(email: email),
+            ),
+          );
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Please confirm your email address to sign in."),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message), backgroundColor: Colors.red),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {

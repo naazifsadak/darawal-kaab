@@ -3,23 +3,32 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../services/database_service.dart';
 
 class UserProvider with ChangeNotifier {
   final AuthService _authService = AuthService();
   supabase.User? _currentUser;
 
-  String _name = "Driver User";
-  String _bio =
-      "Road safety enthusiast.\nReporting accidents and traffic updates.";
-  String _email = "driver@example.com";
-  String _phone = "+252 61 5000000";
+  String _name = "User";
+  String _bio = "";
+  String _email = "";
+  String _phone = "";
   String _profileImage =
-      "https://ui-avatars.com/api/?name=Driver+User&background=random";
+      "https://ui-avatars.com/api/?name=User&background=random&size=512";
   File? _profileImageFile;
   int _followers = 0;
   int _following = 0;
   int _postsCount = 0;
-  bool _hideFollowersFollowing = false;
+  bool _isAdmin = false;
+  String _status = "active";
+
+  bool _needsPasswordReset = false;
+  bool get needsPasswordReset => _needsPasswordReset;
+
+  void setNeedsPasswordReset(bool value) {
+    _needsPasswordReset = value;
+    notifyListeners();
+  }
 
   UserProvider() {
     _init();
@@ -27,20 +36,24 @@ class UserProvider with ChangeNotifier {
 
   void _init() {
     _authService.authStateChanges.listen((data) {
-      // final event = data.event;
+      final event = data.event;
       final session = data.session;
+
+      if (event == supabase.AuthChangeEvent.passwordRecovery) {
+        _needsPasswordReset = true;
+      }
 
       _currentUser = session?.user;
 
       if (_currentUser != null) {
         _email = _currentUser!.email ?? "";
-        _name = _currentUser!.userMetadata?['display_name'] ?? "Driver User";
-        _phone = _currentUser!.userMetadata?['phone'] ?? "+252 61 5000000";
+        _name = _currentUser!.userMetadata?['display_name'] ?? "User";
+        _phone = _currentUser!.userMetadata?['phone'] ?? "";
         // Set initial avatar based on name
-        if (!_profileImage.startsWith('http') &&
-            _profileImage.contains('assets')) {
+        if (!_profileImage.startsWith('http') ||
+            _profileImage.contains('name=User')) {
           _profileImage =
-              "https://ui-avatars.com/api/?name=${Uri.encodeComponent(_name)}&background=random";
+              "https://ui-avatars.com/api/?name=${Uri.encodeComponent(_name)}&background=random&size=512";
         }
         _fetchProfile(); // Fetch real data
       } else {
@@ -77,7 +90,27 @@ class UserProvider with ChangeNotifier {
         _followers = data['followers_count'] ?? 0;
         _following = data['following_count'] ?? 0;
         _postsCount = data['posts_count'] ?? 0;
-        _hideFollowersFollowing = data['hide_followers_following'] ?? false;
+        if (_postsCount < 0) _postsCount = 0;
+        _isAdmin = data['is_admin'] ?? false;
+        _status = data['status'] ?? 'active';
+
+        // Fetch exact, real-time follower/following counts from follows table
+        try {
+          final followersList = await supabase.Supabase.instance.client
+              .from('follows')
+              .select('follower_id')
+              .eq('following_id', _currentUser!.id);
+          _followers = (followersList as List).length;
+
+          final followingList = await supabase.Supabase.instance.client
+              .from('follows')
+              .select('following_id')
+              .eq('follower_id', _currentUser!.id);
+          _following = (followingList as List).length;
+        } catch (e) {
+          debugPrint("Error fetching real-time follower/following counts: $e");
+        }
+
         notifyListeners();
       } else {
         debugPrint("No profile found for user (data is null)");
@@ -87,6 +120,10 @@ class UserProvider with ChangeNotifier {
     }
   }
 
+  Future<void> refreshProfile() async {
+    await _fetchProfile();
+  }
+
   String get name => _name;
   String get bio => _bio;
   String get email => _email;
@@ -94,10 +131,11 @@ class UserProvider with ChangeNotifier {
   String get profileImage => _profileImage;
   File? get profileImageFile => _profileImageFile;
   bool get isAuthenticated => _currentUser != null;
+  bool get isAdmin => _isAdmin;
+  String get status => _status;
   int get followers => _followers;
   int get following => _following;
-  int get postsCount => _postsCount;
-  bool get hideFollowersFollowing => _hideFollowersFollowing;
+  int get postsCount => _postsCount < 0 ? 0 : _postsCount;
 
   ImageProvider get imageProvider {
     if (_profileImageFile != null) {
@@ -120,7 +158,8 @@ class UserProvider with ChangeNotifier {
       followers: _followers,
       following: _following,
       postsCount: _postsCount,
-      hideFollowersFollowing: _hideFollowersFollowing,
+      isAdmin: _isAdmin,
+      status: _status,
     );
   }
 
@@ -157,45 +196,40 @@ class UserProvider with ChangeNotifier {
       final updates = {
         'name': name,
         'bio': bio,
-        'updated_at': DateTime.now().toIso8601String(),
       };
 
       if (imageUrl != null) {
         updates['profile_image'] = imageUrl;
       }
 
-      updates['id'] = _currentUser!.id; // Ensure ID is present for upsert
-      debugPrint("Attempting to UPSERT profile with updates: $updates");
+      // Remove id from updates if we use update()
+      debugPrint("Attempting to UPDATE profile with updates: $updates");
 
-      final response = await supabase.Supabase.instance.client
+      await supabase.Supabase.instance.client
           .from('profiles')
-          .upsert(updates)
-          .select();
+          .update(updates)
+          .eq('id', _currentUser!.id);
 
-      debugPrint("UPSERT Success. Response: $response");
+      // Also update auth user metadata so next login uses correct display_name
+      await supabase.Supabase.instance.client.auth.updateUser(
+        supabase.UserAttributes(
+          data: {
+            'display_name': name,
+            'phone': phone,
+          },
+        ),
+      );
+
+      debugPrint("UPDATE Success.");
 
       notifyListeners();
     } catch (e) {
       debugPrint("Error updating profile (UPSERT failed): $e");
-      // Optionally create a method to set error state
+      rethrow;
     }
   }
 
-  Future<void> toggleHideFollowersFollowing(bool value) async {
-    _hideFollowersFollowing = value;
-    notifyListeners();
 
-    if (_currentUser == null) return;
-    try {
-      await supabase.Supabase.instance.client
-          .from('profiles')
-          .update({'hide_followers_following': value})
-          .eq('id', _currentUser!.id);
-      debugPrint("hide_followers_following updated in DB: $value");
-    } catch (e) {
-      debugPrint("Error updating hide_followers_following: $e");
-    }
-  }
 
   void incrementPostsCount() {
     _postsCount++;
@@ -205,6 +239,15 @@ class UserProvider with ChangeNotifier {
   void decrementPostsCount() {
     if (_postsCount > 0) {
       _postsCount--;
+    } else {
+      _postsCount = 0;
+    }
+    notifyListeners();
+  }
+
+  void syncPostsCount(int actualCount) {
+    if (_postsCount != actualCount && actualCount >= 0) {
+      _postsCount = actualCount;
       notifyListeners();
     }
   }
@@ -221,21 +264,38 @@ class UserProvider with ChangeNotifier {
   }
 
   void clearUserData() {
-    _name = "Driver User";
-    _bio = "Road safety enthusiast.\nReporting accidents and traffic updates.";
-    _email = "driver@example.com";
-    _phone = "+252 61 5000000";
-    _profileImage = "assets/images/me.jpeg";
+    _name = "User";
+    _bio = "";
+    _email = "";
+    _phone = "";
+    _profileImage = "https://ui-avatars.com/api/?name=User&background=random&size=512";
     _profileImageFile = null;
     _followers = 0;
     _following = 0;
     _postsCount = 0;
-    _hideFollowersFollowing = false;
+    _isAdmin = false;
+    _status = "active";
     _currentUser = null; // Explicitly clear current user
+    _needsPasswordReset = false;
     notifyListeners();
   }
 
   Future<void> signOut() async {
     await _authService.signOut();
+  }
+
+  Future<void> deleteAccount() async {
+    if (_currentUser == null) return;
+    final userId = _currentUser!.id;
+    try {
+      // Delete user profile from database.
+      // Trigger in database handles cascade deleting auth.users row.
+      await DatabaseService().deleteProfile(userId);
+      await signOut();
+      clearUserData();
+    } catch (e) {
+      debugPrint("Error deleting account: $e");
+      rethrow;
+    }
   }
 }

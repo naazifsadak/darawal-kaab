@@ -57,7 +57,7 @@ class DatabaseService {
       'text': text,
     };
     if (parentId != null) {
-      insertData['parent_id'] = int.tryParse(parentId);
+      insertData['parent_id'] = parentId;
     }
     await _supabase.from('comments').insert(insertData);
   }
@@ -73,6 +73,29 @@ class DatabaseService {
 
   Future<void> deleteComment(String commentId) async {
     await _supabase.from('comments').delete().eq('id', commentId);
+  }
+
+  Future<void> toggleCommentLike(String commentId, String userId, bool isLiking) async {
+    if (isLiking) {
+      await _supabase.from('comment_likes').insert({
+        'comment_id': commentId,
+        'user_id': userId,
+      });
+    } else {
+      await _supabase
+          .from('comment_likes')
+          .delete()
+          .eq('comment_id', commentId)
+          .eq('user_id', userId);
+    }
+  }
+
+  Future<List<String>> fetchLikedCommentIds(String userId) async {
+    final response = await _supabase
+        .from('comment_likes')
+        .select('comment_id')
+        .eq('user_id', userId);
+    return (response as List).map((row) => row['comment_id'].toString()).toList();
   }
 
   // --- PROFILES ---
@@ -112,6 +135,10 @@ class DatabaseService {
     }
   }
 
+  Future<void> deleteProfile(String userId) async {
+    await _supabase.from('profiles').delete().eq('id', userId);
+  }
+
   Future<void> deletePost(String postId) async {
     await _supabase.from('posts').delete().eq('id', postId);
   }
@@ -129,11 +156,32 @@ class DatabaseService {
   }
 
   Future<Map<String, dynamic>?> fetchUserProfile(String userId) async {
-    return await _supabase
+    final profileData = await _supabase
         .from('profiles')
-        .select('*, posts(id)')
+        .select('*, posts:posts!posts_author_id_fkey(id)')
         .eq('id', userId)
         .maybeSingle();
+        
+    if (profileData == null) return null;
+
+    // Fetch exact follower/following counts
+    try {
+      final followersList = await _supabase
+          .from('follows')
+          .select('follower_id')
+          .eq('following_id', userId);
+      profileData['true_followers_count'] = (followersList as List).length;
+      
+      final followingList = await _supabase
+          .from('follows')
+          .select('following_id')
+          .eq('follower_id', userId);
+      profileData['true_following_count'] = (followingList as List).length;
+    } catch (e) {
+      // Ignored: fallback to cached counts if this fails
+    }
+
+    return profileData;
   }
 
   // --- LIKES ---
@@ -190,6 +238,40 @@ class DatabaseService {
         .toList();
   }
 
+  Future<List<Map<String, dynamic>>> fetchFollowerProfiles(String userId) async {
+    final response = await _supabase
+        .from('follows')
+        .select('follower_id')
+        .eq('following_id', userId);
+    final List<String> followerIds = (response as List)
+        .map((row) => row['follower_id'].toString())
+        .toList();
+    
+    if (followerIds.isEmpty) return [];
+    
+    return await _supabase
+        .from('profiles')
+        .select()
+        .filter('id', 'in', '(${followerIds.join(",")})');
+  }
+
+  Future<List<Map<String, dynamic>>> fetchFollowingProfiles(String userId) async {
+    final response = await _supabase
+        .from('follows')
+        .select('following_id')
+        .eq('follower_id', userId);
+    final List<String> followingIds = (response as List)
+        .map((row) => row['following_id'].toString())
+        .toList();
+    
+    if (followingIds.isEmpty) return [];
+    
+    return await _supabase
+        .from('profiles')
+        .select()
+        .filter('id', 'in', '(${followingIds.join(",")})');
+  }
+
   // --- NOTIFICATIONS ---
   Future<List<Map<String, dynamic>>> fetchNotifications(String userId) async {
     return await _supabase
@@ -206,5 +288,49 @@ class DatabaseService {
         .from('notifications')
         .update({'is_read': true})
         .eq('id', notificationId);
+  }
+
+  // --- UGC BLOCKING & REPORTING ---
+  Future<void> blockUser(String blockerId, String blockedId) async {
+    await _supabase.from('user_blocks').insert({
+      'blocker_id': blockerId,
+      'blocked_id': blockedId,
+    });
+  }
+
+  Future<List<String>> fetchBlockedUserIds(String blockerId) async {
+    final response = await _supabase
+        .from('user_blocks')
+        .select('blocked_id')
+        .eq('blocker_id', blockerId);
+    return (response as List).map((row) => row['blocked_id'].toString()).toList();
+  }
+
+  Future<void> reportPost({
+    required String reporterId,
+    required String postId,
+    required String reason,
+    String? details,
+  }) async {
+    await _supabase.from('content_reports').insert({
+      'reporter_id': reporterId,
+      'reported_post_id': postId,
+      'reason': reason,
+      'details': details,
+    });
+  }
+
+  Future<void> reportComment({
+    required String reporterId,
+    required String commentId,
+    required String reason,
+    String? details,
+  }) async {
+    await _supabase.from('content_reports').insert({
+      'reporter_id': reporterId,
+      'reported_comment_id': commentId,
+      'reason': reason,
+      'details': details,
+    });
   }
 }

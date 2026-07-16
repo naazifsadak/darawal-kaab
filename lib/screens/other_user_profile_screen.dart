@@ -4,7 +4,10 @@ import 'package:provider/provider.dart';
 import '../../models/user_model.dart';
 import '../../models/post_model.dart';
 import '../../providers/social_provider.dart';
+import '../../providers/user_provider.dart';
+import '../widgets/full_screen_image.dart';
 import 'post_detail_screen.dart';
+import 'follow_list_screen.dart';
 
 class OtherUserProfileScreen extends StatefulWidget {
   final User user;
@@ -46,7 +49,7 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
 
     return Consumer<SocialProvider>(
       builder: (context, socialProvider, child) {
-        final isFollowing = displayUser.isFollowing;
+        final isFollowing = socialProvider.isFollowing(displayUser.id);
 
         if (_isLoading) {
           return const Scaffold(
@@ -79,16 +82,28 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
               children: [
                 const SizedBox(height: 20),
                 // Avatar
-                Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.grey[200]!, width: 2),
-                  ),
-                  child: CircleAvatar(
-                    radius: 50,
-                    backgroundColor: Colors.grey[200],
-                    backgroundImage: displayUser.imageProvider,
+                GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => FullScreenImage(
+                          imageProvider: displayUser.imageProvider,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.grey[200]!, width: 2),
+                    ),
+                    child: CircleAvatar(
+                      radius: 50,
+                      backgroundColor: Colors.grey[200],
+                      backgroundImage: displayUser.imageProvider,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -126,18 +141,46 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _buildStatItem(displayUser.postsCount.toString(), "Posts"),
                     _buildStatItem(
-                      displayUser.hideFollowersFollowing
-                          ? "-"
-                          : displayUser.followers.toString(),
+                      displayUser.postsCount.toString(),
+                      "Posts",
+                      null,
+                    ),
+                     _buildStatItem(
+                      displayUser.followers.toString(),
                       "Followers",
+                      () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => FollowListScreen(
+                              title: "Followers",
+                              userId: displayUser.id,
+                              isFollowers: true,
+                            ),
+                          ),
+                        ).then((_) {
+                          _fetchLiveUser();
+                        });
+                      },
                     ),
                     _buildStatItem(
-                      displayUser.hideFollowersFollowing
-                          ? "-"
-                          : displayUser.following.toString(),
+                      displayUser.following.toString(),
                       "Following",
+                      () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => FollowListScreen(
+                              title: "Following",
+                              userId: displayUser.id,
+                              isFollowers: false,
+                            ),
+                          ),
+                        ).then((_) {
+                          _fetchLiveUser();
+                        });
+                      },
                     ),
                   ],
                 ),
@@ -151,16 +194,21 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
                     width: double.infinity,
                     height: 48,
                     child: ElevatedButton(
-                      onPressed: () {
-                        socialProvider.toggleFollow(displayUser.id);
+                      onPressed: () async {
+                        final userProvider = Provider.of<UserProvider>(context, listen: false);
+                        // Optimistically toggle counts locally
                         setState(() {
-                          // Manually toggle locally if waiting for fetch
-                          displayUser.isFollowing = !displayUser.isFollowing;
-                          if (displayUser.isFollowing)
+                          final wasFollowing = socialProvider.isFollowing(displayUser.id);
+                          if (!wasFollowing) {
                             displayUser.followers++;
-                          else
-                            displayUser.followers--;
+                          } else {
+                            displayUser.followers = (displayUser.followers - 1).clamp(0, 999999);
+                          }
                         });
+
+                        await socialProvider.toggleFollow(displayUser.id);
+                        await _fetchLiveUser();
+                        userProvider.refreshProfile();
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: isFollowing
@@ -201,7 +249,20 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
                         child: Center(child: CircularProgressIndicator()),
                       );
                     }
-                    if (!postsSnapshot.hasData || postsSnapshot.data!.isEmpty) {
+                    final userPosts = postsSnapshot.data ?? [];
+
+                    // Automatically sync the exact post count locally
+                    if (userPosts.length != displayUser.postsCount) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) {
+                          setState(() {
+                            displayUser.postsCount = userPosts.length;
+                          });
+                        }
+                      });
+                    }
+
+                    if (userPosts.isEmpty) {
                       return Padding(
                         padding: const EdgeInsets.all(32.0),
                         child: Text(
@@ -210,8 +271,6 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
                         ),
                       );
                     }
-
-                    final userPosts = postsSnapshot.data!;
                     return GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
@@ -261,23 +320,30 @@ class _OtherUserProfileScreenState extends State<OtherUserProfileScreen> {
     );
   }
 
-  Widget _buildStatItem(String count, String label) {
-    return Column(
-      children: [
-        Text(
-          count,
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.black,
-          ),
+  Widget _buildStatItem(String count, String label, [VoidCallback? onTap]) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+        child: Column(
+          children: [
+            Text(
+              count,
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.black,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500]),
+            ),
+          ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500]),
-        ),
-      ],
+      ),
     );
   }
 }

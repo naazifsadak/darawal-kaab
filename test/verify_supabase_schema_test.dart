@@ -1,6 +1,6 @@
+// ignore_for_file: avoid_print
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:io';
 
 void main() {
   test('Verify Supabase Connectivity and Schema', () async {
